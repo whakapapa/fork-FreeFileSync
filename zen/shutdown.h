@@ -8,7 +8,8 @@
 #define SHUTDOWN_H_3423847870238407783265
 
 #include <functional>
-#include "file_error.h"
+#include "stl_tools.h"
+//#include "file_error.h" //don't drag in extra_log.h/thread.h dependency
 
 
 namespace zen

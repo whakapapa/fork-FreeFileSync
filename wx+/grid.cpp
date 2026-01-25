@@ -169,10 +169,9 @@ int GridData::getBestSize(const wxReadOnlyDC& dc, size_t row, ColumnType colType
 
 wxRect GridData::drawCellBorder(wxDC& dc, const wxRect& rect) //returns remaining rectangle
 {
-    clearArea(dc, {rect.x + rect.width - dipToWxsize(1), rect.y, dipToWxsize(1), rect.height}, getColorGridLine()); //right border
-    clearArea(dc, {rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1)}, getColorGridLine()); //bottom border
+        drawRectangleBorder(dc, rect, getColorGridLine(), dipToWxsize(1), wxRIGHT | wxBOTTOM);
 
-    return {rect.x, rect.y, rect.width - dipToWxsize(1), rect.height - dipToWxsize(1)};
+        return {rect.x, rect.y, rect.width - dipToWxsize(1), rect.height - dipToWxsize(1)};
 }
 
 
@@ -264,15 +263,13 @@ wxRect GridData::drawColumnLabelBackground(wxDC& dc, const wxRect& rect, bool hi
     else //regular background gradient
         dc.GradientFillLinear(rect, getColorLabelGradientFrom(), getColorLabelGradientTo(), wxSOUTH);
 
-    //left border
-    clearArea(dc, wxRect(rect.GetTopLeft(), wxSize(dipToWxsize(1), rect.height)), wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
+    drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW), dipToWxsize(1), wxLEFT);
 
     //right border
     dc.GradientFillLinear(wxRect(rect.x + rect.width - dipToWxsize(1), rect.y, dipToWxsize(1), rect.height),
                           getColorLabelGradientFrom(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), wxSOUTH);
 
-    //bottom border
-    clearArea(dc, wxRect(rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1)), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW));
+    drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), dipToWxsize(1), wxBOTTOM);
 
     return rect.Deflate(dipToWxsize(1), dipToWxsize(1));
 }
@@ -410,6 +407,10 @@ private:
     void onPaintEvent(wxPaintEvent& event)
     {
 
+#if wxCHECK_VERSION(3, 3, 2)
+        use wxDC::DisableAutomaticBoundingBoxUpdates!?
+#endif
+
         DynBufPaintDC dc(*this, doubleBuffer_);
         assert(GetSize() == GetClientSize());
 
@@ -444,20 +445,17 @@ private:
         dc.GradientFillLinear(rect, getColorLabelGradientFrom(), getColorLabelGradientTo(), wxSOUTH);
 
         //left border
-        dc.GradientFillLinear(wxRect(rect.GetTopLeft(), wxSize(dipToWxsize(1), rect.height)),
+        dc.GradientFillLinear({rect.x, rect.y, dipToWxsize(1), rect.height},
                               getColorLabelGradientFrom(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), wxSOUTH);
 
-        //left border2
-        clearArea(dc, wxRect(rect.x + dipToWxsize(1), rect.y, dipToWxsize(1), rect.height),
-                  wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
+        clearArea(dc, {rect.x + dipToWxsize(1), rect.y, dipToWxsize(1), rect.height}, wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
 
         //right border
         dc.GradientFillLinear(wxRect(rect.x + rect.width - dipToWxsize(1), rect.y, dipToWxsize(1), rect.height),
                               getColorLabelGradientFrom(), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), wxSOUTH);
 
         //bottom border
-        clearArea(dc, wxRect(rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1)),
-                  wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW));
+        drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), dipToWxsize(1), wxBOTTOM);
     }
 };
 
@@ -536,17 +534,9 @@ private:
         //clearArea(dc, rect, getColorRowLabel());
         dc.GradientFillLinear(rect, getColorLabelGradientFrom(), getColorLabelGradientTo(), wxEAST); //clear overlapping cells
 
-        //top border
-        clearArea(dc, wxRect(rect.x, rect.y, rect.width, dipToWxsize(1)), wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
-
-        //left border
-        clearArea(dc, wxRect(rect.x, rect.y, dipToWxsize(1), rect.height), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW));
-
-        //right border
-        clearArea(dc, wxRect(rect.x + rect.width - dipToWxsize(1), rect.y, dipToWxsize(1), rect.height), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW));
-
-        //bottom border
-        clearArea(dc, wxRect(rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1)), wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW));
+        drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW),    dipToWxsize(1), wxTOP);
+        drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), dipToWxsize(1), wxLEFT | wxRIGHT | wxBOTTOM);
+        
 
         //label text
         wxRect textRect = rect;
@@ -1680,28 +1670,6 @@ wxSize Grid::GetSizeAvailableForScrollTarget(const wxSize& size)
     }();
 
     //2. try(!) to determine scrollbar sizes:
-#if GTK_MAJOR_VERSION == 2
-    /* Ubuntu 19.10: "scrollbar-spacing" has a default value of 3: https://developer.gnome.org/gtk2/stable/GtkScrolledWindow.html#GtkScrolledWindow--s-scrollbar-spacing
-        => the default Ubuntu theme (but also our Gtk2Styles.rc) set it to 0, but still the first call to gtk_widget_style_get() returns 3: why?
-        => maybe styles are applied asynchronously? GetClientSize() is affected by this, so can't use!
-        => always ignore spacing to get consistent scrollbar dimensions!  */
-    GtkScrolledWindow* scrollWin = GTK_SCROLLED_WINDOW(wxWindow::m_widget);
-    assert(scrollWin);
-    GtkWidget* rangeH = ::gtk_scrolled_window_get_hscrollbar(scrollWin);
-    GtkWidget* rangeV = ::gtk_scrolled_window_get_vscrollbar(scrollWin);
-
-    GtkRequisition reqH = {};
-    GtkRequisition reqV = {};
-    if (rangeH) ::gtk_widget_size_request(rangeH, &reqH);
-    if (rangeV) ::gtk_widget_size_request(rangeV, &reqV);
-    assert(reqH.width > 0 && reqH.height > 0);
-    assert(reqV.width > 0 && reqV.height > 0);
-
-    const wxSize scrollBarSizeTmp(reqV.width, reqH.height);
-    assert(scrollBarHeightH_ == 0 || scrollBarHeightH_ == scrollBarSizeTmp.y);
-    assert(scrollBarWidthV_  == 0 || scrollBarWidthV_  == scrollBarSizeTmp.x);
-
-#elif GTK_MAJOR_VERSION == 3
     //scrollbar size increases dynamically on mouse-hover!
     //see "overlay scrolling": https://developer.gnome.org/gtk3/stable/GtkScrolledWindow.html#gtk-scrolled-window-set-overlay-scrolling
     //luckily "scrollbar-spacing" is stable on GTK3
@@ -1715,9 +1683,6 @@ wxSize Grid::GetSizeAvailableForScrollTarget(const wxSize& size)
     assert(scrollBarSizeTmp.y == 0 ||
            scrollBarSizeTmp.y == 6 || scrollBarSizeTmp.y == 13 || //Ubuntu 19.10
            scrollBarSizeTmp.y == 16); //openSuse
-#else
-#error unknown GTK version!
-#endif
     scrollBarHeightH_ = std::max(scrollBarHeightH_, scrollBarSizeTmp.y);
     scrollBarWidthV_  = std::max(scrollBarWidthV_,  scrollBarSizeTmp.x);
     //this function is called again by wxScrollHelper::AdjustScrollbars() if SB_SHOW_ALWAYS-scrollbars are not yet shown => scrollbar size > 0 eventually!

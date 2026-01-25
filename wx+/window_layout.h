@@ -53,7 +53,6 @@ void setMainInstructionFont(wxWindow& control)
 inline
 void setDefaultWidth(wxSpinCtrl& m_spinCtrl)
 {
-#ifdef __WXGTK3__
     //there's no way to set width using GTK's CSS! =>
     m_spinCtrl.InvalidateBestSize();
     ::gtk_entry_set_width_chars(GTK_ENTRY(m_spinCtrl.m_widget), 3);
@@ -73,9 +72,6 @@ void setDefaultWidth(wxSpinCtrl& m_spinCtrl)
     ::g_value_set_boolean(&bval, false);
     ZEN_ON_SCOPE_EXIT(::g_value_unset(&bval));
     ::g_object_set_property(G_OBJECT(m_spinCtrl.m_widget), "visibility", &bval);
-#endif
-#else
-    m_spinCtrl.SetMinSize({dipToWxsize(70), -1});
 #endif
 
 }

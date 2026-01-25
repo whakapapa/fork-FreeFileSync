@@ -75,26 +75,17 @@ Zstring zen::getLoginUser() //throw FileError
 }
 
 
-Zstring zen::getUserDescription() //throw FileError
+Zstring zen::getHostName() //throw FileError
 {
-    const Zstring username     = getLoginUser(); //throw FileError
-    const Zstring computerName = []() -> Zstring //throw FileError
-    {
-        std::vector<char> buf(10000);
-        if (::gethostname(buf.data(), buf.size()) != 0)
-            THROW_LAST_FILE_ERROR(_("Cannot get process information."), "gethostname");
+    std::vector<char> buf(1024);
+    if (::gethostname(buf.data(), buf.size()) != 0)
+        THROW_LAST_FILE_ERROR(_("Cannot get process information."), "gethostname");
 
-        Zstring hostName = buf.data();
-        if (endsWithAsciiNoCase(hostName, ".local")) //strip fluff (macOS) => apparently not added on Linux?
-            hostName = beforeLast(hostName, '.', IfNotFoundReturn::none);
+    Zstring hostName = buf.data();
+    if (endsWithAsciiNoCase(hostName, ".local")) //strip fluff (macOS) => apparently not added on Linux?
+        hostName = beforeLast(hostName, '.', IfNotFoundReturn::none);
 
-        return hostName;
-    }();
-
-    if (contains(getUpperCase(computerName), getUpperCase(username)))
-        return username; //no need for text duplication! e.g. "Zenju (Zenju-PC)"
-
-    return username + Zstr(" (") + computerName + Zstr(')'); //e.g. "Admin (Zenju-PC)"
+    return hostName;
 }
 
 
@@ -125,6 +116,19 @@ ComputerModel zen::getComputerModel() //throw FileError
         };
         cm.model  = tryGetInfo("/sys/devices/virtual/dmi/id/product_name"); //throw FileError
         cm.vendor = tryGetInfo("/sys/devices/virtual/dmi/id/sys_vendor");   //
+
+        //detect WSL: https://github.com/Microsoft/WSL/issues/423#issuecomment-221627364
+        if (const std::wstring relInfo = tryGetInfo("/proc/sys/kernel/osrelease");
+            //e.g. "Linux version 6.6.87.2-microsoft-standard-WSL2 (root@439a258ad544)
+            //      (gcc (GCC) 11.2.0, GNU ld (GNU Binutils) 2.37) #1 SMP PREEMPT_DYNAMIC Thu Jun  5 18:30:46 UTC 2025
+            contains(relInfo, L"WSL") &&
+            contains(getAsciiLowerCase(relInfo), L"microsoft"))
+        {
+            if (cm.model.empty())
+                cm.model = L"WSL";
+            if (cm.vendor.empty())
+                cm.vendor = L"Microsoft";
+        }
 
         //clean up:
         cm.model  = beforeFirst(cm.model,  L'\u00ff', IfNotFoundReturn::all); //fix broken BIOS entries:
@@ -193,15 +197,12 @@ ComputerModel zen::getComputerModel() //throw FileError
 
 
 
-std::wstring zen::getOsDescription() //throw FileError
-{
-    try
-    {
-        const OsVersionDetail verDetail = getOsVersionDetail(); //throw SysError
-        return trimCpy(verDetail.osName + L" (" + verDetail.osVersionRaw) + L')'; //e.g. "CentOS (7.8.2003)"
 
-    }
-    catch (const SysError& e) { throw FileError(_("Cannot get process information."), e.toString()); }
+std::wstring zen::getOsDescription()
+{
+    const OsVersionDetail verDetail = getOsVersion();
+    return verDetail.osName + L" (" + verDetail.osVersionRaw + L')'; //e.g. "CentOS (7.8.2003)"
+
 }
 
 

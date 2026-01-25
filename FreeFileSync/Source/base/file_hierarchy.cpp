@@ -327,23 +327,44 @@ SyncOperation FilePair::applyMoveOptimization(SyncOperation op) const
 {
     /* check whether we can optimize "create + delete" via "move":
        note: as long as we consider "create + delete" cases only, detection of renamed files, should be fine even for "binary" comparison variant!       */
-    if (FilePair* refFile = getMovePair())
+    auto movePairHasOp =[](const FilePair& file, SyncOperation op2)
     {
-        const SyncOperation opRef = refFile->FileSystemObject::getSyncOperation(); //do *not* make a virtual call!
-        if (op    == SO_CREATE_LEFT &&
-            opRef == SO_DELETE_LEFT)
-            op = SO_MOVE_LEFT_TO;
-        else if (op    == SO_DELETE_LEFT &&
-                 opRef == SO_CREATE_LEFT)
-            op = SO_MOVE_LEFT_FROM;
-        else if (op    == SO_CREATE_RIGHT &&
-                 opRef == SO_DELETE_RIGHT)
-            op = SO_MOVE_RIGHT_TO;
-        else if (op    == SO_DELETE_RIGHT &&
-                 opRef == SO_CREATE_RIGHT)
-            op = SO_MOVE_RIGHT_FROM;
-    }
+        if (FilePair* refFile = file.getMovePair())
+            return refFile->FileSystemObject::getSyncOperation() == op2; //do *not* make a virtual call!
+        return false;
+    };
+    switch (op)
+    {
+        case SO_CREATE_LEFT:
+            if (movePairHasOp(*this, SO_DELETE_LEFT))
+                return SO_MOVE_LEFT_TO;
+            break;
+        case SO_DELETE_LEFT:
+            if (movePairHasOp(*this, SO_CREATE_LEFT))
+                return SO_MOVE_LEFT_FROM;
+            break;
+        case SO_CREATE_RIGHT:
+            if (movePairHasOp(*this, SO_DELETE_RIGHT))
+                return SO_MOVE_RIGHT_TO;
+            break;
+        case SO_DELETE_RIGHT:
+            if (movePairHasOp(*this, SO_CREATE_RIGHT))
+                return SO_MOVE_RIGHT_FROM;
+            break;
 
+        case SO_OVERWRITE_LEFT:
+        case SO_OVERWRITE_RIGHT:
+        case SO_MOVE_LEFT_FROM:
+        case SO_MOVE_LEFT_TO:
+        case SO_MOVE_RIGHT_FROM:
+        case SO_MOVE_RIGHT_TO:
+        case SO_RENAME_LEFT:
+        case SO_RENAME_RIGHT:
+        case SO_DO_NOTHING:
+        case SO_EQUAL:
+        case SO_UNRESOLVED_CONFLICT:
+            break;
+    }
     return op;
 }
 

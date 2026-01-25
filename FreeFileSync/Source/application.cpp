@@ -33,8 +33,7 @@ using namespace zen;
 using namespace fff;
 
 
-#ifdef __WXGTK3__
-    /* Wayland backend used by GTK3 does not allow to move windows! (no such issue on GTK2)
+    /* Wayland backend used by GTK3 does not allow to move windows!
 
     "I'd really like to know if there is some deep technical reason for it or
     if this is really as bloody stupid as it seems?" - vadz  https://github.com/wxWidgets/wxWidgets/issues/18733#issuecomment-1011235902
@@ -43,7 +42,6 @@ using namespace fff;
 
     => workaround: https://docs.gtk.org/gdk3/func.set_allowed_backends.html           */
     GLOBAL_RUN_ONCE(::gdk_set_allowed_backends("x11,*")); //call *before* gtk_init()
-#endif
 
 IMPLEMENT_APP(Application)
 
@@ -126,21 +124,6 @@ bool Application::OnInit()
     catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
 
     //GTK should already have been initialized by wxWidgets (see \src\gtk\app.cpp:wxApp::Initialize)
-#if GTK_MAJOR_VERSION == 2
-    ::gtk_rc_parse(appendPath(getResourceDirPath(), "Gtk2Styles.rc").c_str());
-
-    //hang on Ubuntu 19.10 (GLib 2.62) caused by ibus initialization: https://freefilesync.org/forum/viewtopic.php?t=6704
-    //=> work around 1: bonus: avoid needless DBus calls: https://developer.gnome.org/gio/stable/running-gio-apps.html
-    //                  drawback: missing MTP and network links in folder picker: https://freefilesync.org/forum/viewtopic.php?t=6871
-    //if (::setenv("GIO_USE_VFS", "local", true /*overwrite*/) != 0)
-    //    std::cerr << utfTo<std::string>(formatSystemError("setenv(GIO_USE_VFS)", errno)) + '\n';
-    //    //BUGZ!?: "Modifications of environment variables are not allowed in multi-threaded programs" - https://rachelbythebay.com/w/2017/01/30/env/
-
-    //=> work around 2:
-    [[maybe_unused]] GVfs* defaultFs = ::g_vfs_get_default(); //not owned by us!
-    //no such issue on GTK3!
-
-#elif GTK_MAJOR_VERSION == 3
     auto loadCSS = [&](const char* fileName)
     {
         GtkCssProvider* provider = ::gtk_css_provider_new();
@@ -172,9 +155,6 @@ bool Application::OnInit()
         }
         catch (const SysError& e2) { logExtraError(_("Failed to update the color theme.") + L"\n\n" + e2.toString()); }
     }
-#else
-#error unknown GTK version!
-#endif
 
     /* we're a GUI app: ignore SIGHUP when the parent terminal quits! (or process is killed!)
         => the FFS launcher will still be killed => fine
@@ -707,9 +687,9 @@ void Application::runBatchMode(const FfsBatchConfig& batchCfg, const Zstring& cf
 
     std::string startTimeStr = utfTo<std::string>(formatTime(Zstr("%Y-%m-%dT%H:%M:%S%z"), getLocalTime(std::chrono::system_clock::to_time_t(r.summary.startTime))));
     syncStats.objectVal.set("startTime", std::move(startTimeStr.insert(startTimeStr.size() - 2, ":"))); //ISO 8601 date/time with offset e.g. 2001-08-23T14:55:02+02:00
-     
+
     syncStats.objectVal.set("totalTimeSec", std::chrono::duration_cast<std::chrono::seconds>(r.summary.totalTime).count());
-    
+
     syncStats.objectVal.set("errors",   logStats.errors);
     syncStats.objectVal.set("warnings", logStats.warnings);
 

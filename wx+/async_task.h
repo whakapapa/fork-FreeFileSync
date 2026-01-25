@@ -76,9 +76,9 @@ public:
         std::promise<ResultType> prom;
         tasks_.push_back(std::make_unique<ConcreteTask<ResultType, std::decay_t<Fun2>>>(prom.get_future(), std::forward<Fun2>(evalOnGui)));
 
-        //don't use zen::runAsync() and std::packaged_task => let exceptions crash the app directly at throw location!
-        std::thread([prom = std::move(prom),
-                     fun = std::forward<Fun>(evalAsync)]() mutable
+        //uncaught exception? => let the app crash at throw location: requires InterruptibleThread, not std::thread!
+        InterruptibleThread([prom = std::move(prom),
+                     fun = std::forward<Fun>(evalAsync)] mutable
         {
             if constexpr (std::is_same_v<ResultType, void>)
             {

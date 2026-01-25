@@ -15,14 +15,7 @@ using namespace zen;
 
 bool zen::darkModeAvailable()
 {
-
-#if GTK_MAJOR_VERSION == 2
-    return false;
-#elif GTK_MAJOR_VERSION >= 3
     return true;
-#else
-#error unknown GTK version!
-#endif
 
 }
 

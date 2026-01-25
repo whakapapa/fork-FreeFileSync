@@ -495,7 +495,7 @@ void MainDialog::create(const GlobalConfig& globalCfg, const Zstring& globalCfgF
     AsyncFirstResult<std::false_type> firstUnavailableFile;
 
     for (const Zstring& filePath : cfgFilePaths)
-        firstUnavailableFile.addJob([filePath]() -> std::optional<std::false_type>
+        firstUnavailableFile.addJob([filePath] -> std::optional<std::false_type>
     {
         try
         {
@@ -631,7 +631,7 @@ void MainDialog::create(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& 
             //check existence of all directories in parallel!
             AsyncFirstResult<std::false_type> firstMissingDir;
             for (const AbstractPath& folderPath : folderPathsToCheck)
-                firstMissingDir.addJob([folderPath]() -> std::optional<std::false_type>
+                firstMissingDir.addJob([folderPath] -> std::optional<std::false_type>
             {
                 try
                 {
@@ -1513,7 +1513,7 @@ void MainDialog::copyGridSelectionToClipboard(const zen::Grid& grid)
     }
     catch (const std::bad_alloc& e)
     {
-        showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setMainInstructions(_("Out of memory.") + L' ' + utfTo<std::wstring>(e.what())));
+        showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setMainInstructions(_("Out of memory.") + L"\n\n" + utfTo<std::wstring>(e.what())));
     }
 }
 
@@ -1545,7 +1545,7 @@ void MainDialog::copyPathsToClipboard(const std::vector<FileSystemObject*>& sele
     }
     catch (const std::bad_alloc& e)
     {
-        showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setMainInstructions(_("Out of memory.") + L' ' + utfTo<std::wstring>(e.what())));
+        showNotificationDialog(this, DialogInfoType::error, PopupDialogCfg().setMainInstructions(_("Out of memory.") + L"\n\n" + utfTo<std::wstring>(e.what())));
     }
 }
 
@@ -2369,7 +2369,7 @@ void MainDialog::onGridKeyEvent(wxKeyEvent& event, Grid& grid, bool leftSide)
     else
     {
         //0 ... 9
-        const size_t extAppPos = [&]() -> size_t
+        const size_t extAppPos = [&] -> size_t
         {
             if ('0' <= keyCode && keyCode <= '9')
                 return keyCode - '0';
@@ -2926,7 +2926,7 @@ void MainDialog::onGridContextRim(const std::vector<FileSystemObject*>& selectio
 
 void MainDialog::addFilterPhrase(const Zstring& phrase, bool include, bool requireNewLine)
 {
-    Zstring& filterString = [&]() -> Zstring&
+    Zstring& filterString = [&] -> Zstring&
     {
         if (include)
         {
@@ -3106,7 +3106,7 @@ void MainDialog::onOpenMenuTools(wxMenuEvent& event)
     //each layout menu item is either shown and owned by m_menuTools OR detached from m_menuTools and owned by detachedMenuItems_:
     auto filterLayoutItems = [&](wxMenuItem* menuItem, wxWindow* panelWindow)
     {
-        wxAuiPaneInfo& paneInfo = this->auiMgr_.GetPane(panelWindow);
+        wxAuiPaneInfo& paneInfo = auiMgr_.GetPane(panelWindow);
         if (paneInfo.IsShown())
         {
             if (!detachedMenuItems_.contains(menuItem))
@@ -3943,7 +3943,7 @@ void MainDialog::onCfgGridContext(GridContextMenuEvent& event)
         {0xdd, 0xdd, 0xdd} /*light grey*/, dipToScreen(1)),
         !selectedRows.empty());
     };
-    const auto defaultColors = []() -> std::vector<std::pair<wxColor, wxString>>
+    const auto defaultColors = [] -> std::vector<std::pair<wxColor, wxString>>
     {
         if (wxSystemSettings::GetAppearance().IsDark()) //=> offer darker colors
             return {{wxNullColour /*=> !wxColor::IsOk()*/, L'(' + _("&Default") + L')'}, //meta options should be enclosed in parentheses
@@ -5960,7 +5960,7 @@ void MainDialog::onAddFolderPairKeyEvent(wxKeyEvent& event)
 {
     const int keyCode = event.GetKeyCode();
 
-    auto getAddFolderPairPos = [&]() -> ptrdiff_t //find folder pair originating the event
+    auto getAddFolderPairPos = [&] -> ptrdiff_t //find folder pair originating the event
     {
         if (auto eventObj = dynamic_cast<const wxWindow*>(event.GetEventObject()))
             for (auto it = additionalFolderPairs_.begin(); it != additionalFolderPairs_.end(); ++it)

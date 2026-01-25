@@ -203,10 +203,8 @@ CompareProgressPanel::Impl::Impl(wxFrame& parentWindow) :
     m_panelErrorStats->Layout();
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
-#ifdef __WXGTK3__
     //Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-#endif
 }
 
 
@@ -776,11 +774,11 @@ private:
         *pnl_.m_choicePostSyncAction, [this]
         {
             std::vector<EnumDescrList<PostSyncAction>::DescrItem> descr;
-            descr.push_back({PostSyncAction::none,     L"", {}});
+            descr.emplace_back(PostSyncAction::none, L"", L"");
             if (parentFrame_) //enable EXIT option for gui mode sync
-                descr.push_back({PostSyncAction::exit,     wxControl::RemoveMnemonics(_("E&xit")), {}});
-            descr.push_back({PostSyncAction::sleep,    _("System: Sleep"),     {}});
-            descr.push_back({PostSyncAction::shutdown, _("System: Shut down"), {}});
+                descr.emplace_back(PostSyncAction::exit, wxControl::RemoveMnemonics(_("E&xit")), L"");
+            descr.emplace_back(PostSyncAction::sleep,    _("System: Sleep"),     L"");
+            descr.emplace_back(PostSyncAction::shutdown, _("System: Shut down"), L"");
             return descr;
         }()
     };
@@ -929,10 +927,9 @@ syncStat_(&syncStat)
     //make sure that standard height matches ProcessPhase::binaryCompare statistics layout (== largest)
 
     this->GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
-#ifdef __WXGTK3__
     this->Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-#endif
+
     pnl_.Layout();
     this->Center(); //call *after* dialog layout update and *before* wxWindow::Show()!
 

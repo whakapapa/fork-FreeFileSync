@@ -6,8 +6,6 @@
 
 #include "gdrive.h"
 #include <variant>
-#include <unordered_set> //needed by clang
-#include <unordered_map> //
 #include <libcurl/curl_wrap.h> //DON'T include <curl/curl.h> directly!
 #include <zen/base64.h>
 #include <zen/file_access.h>
@@ -2481,7 +2479,7 @@ private:
         //getSharedDrives() should be fast enough to avoid the unjustified complexity of change notifications: https://freefilesync.org/forum/viewtopic.php?t=7827&start=30#p29712
         for (const auto& [driveId, driveName] : getSharedDrives(accessBuf_.getAccessToken())) //throw SysError
         {
-            auto fileState = [&, &driveId /*clang bug*/= driveId, &driveName /*clang bug*/= driveName]
+            auto fileState = [&]
             {
                 if (auto it = sharedDrives_.find(driveId);
                     it != sharedDrives_.end())
@@ -2739,12 +2737,10 @@ private:
 
     struct UserSession;
 
-    Zstring getDbFilePath(std::string accountEmail) const
+    Zstring getDbFilePath(const std::string& accountEmail) const
     {
-        for (char& c : accountEmail)
-            c = asciiToLower(c);
         //return appendPath(configDirPath_, utfTo<Zstring>(formatAsHexString(getMd5(utfTo<std::string>(accountEmail)))) + Zstr(".db"));
-        return appendPath(configDirPath_, utfTo<Zstring>(accountEmail) + Zstr(".db"));
+        return appendPath(configDirPath_, utfTo<Zstring>(getAsciiLowerCase(accountEmail)) + Zstr(".db"));
     }
 
     void accessUserSession(const std::string& accountEmail, int timeoutSec, const std::function<void(std::optional<UserSession>& userSession)>& useSession /*throw X*/) //throw SysError, X
@@ -2849,7 +2845,7 @@ private:
                     version != DB_FILE_VERSION)
                     throw SysError(_("Unsupported data format.") + L' ' + replaceCpy(_("Version: %x"), L"%x", numberTo<std::wstring>(version)));
 
-                const std::string& uncompressedStream = decompress(makeStringView(byteStream.begin() + streamIn.pos(), byteStream.end())); //throw SysError
+                const std::string& uncompressedStream = decompress({byteStream.begin() + streamIn.pos(), byteStream.end()}); //throw SysError
                 MemoryStreamIn streamInBody(uncompressedStream);
 
                 auto accessBuf = makeSharedRef<GdriveAccessBuffer>(streamInBody); //throw SysError
@@ -3047,7 +3043,7 @@ private:
                     if (std::shared_ptr<AFS::TraverserCallback> cbSub = cb.onFolder({itemName, false /*isFollowedSymlink*/})) //throw X
                     {
                         const AfsPath afsItemPath(appendPath(folderPath.value, itemName));
-                        workload_.push_back({afsItemPath, std::move(cbSub)});
+                        workload_.emplace_back(afsItemPath, std::move(cbSub));
                     }
                     break;
 
@@ -3068,7 +3064,7 @@ private:
                             if (targetDetails.type == GdriveItemType::folder)
                             {
                                 if (std::shared_ptr<AFS::TraverserCallback> cbSub = cb.onFolder({itemName, true /*isFollowedSymlink*/})) //throw X
-                                    workload_.push_back({afsItemPath, std::move(cbSub)});
+                                    workload_.emplace_back(afsItemPath, std::move(cbSub));
                             }
                             else //a file or named pipe, etc.
                                 cb.onFile({itemName, targetDetails.fileSize, targetDetails.modTime, getGdriveFilePrint(item.details.targetId), true /*isFollowedSymlink*/}); //throw X
@@ -3100,7 +3096,7 @@ struct InputStreamGdrive : public AFS::InputStream
     explicit InputStreamGdrive(const GdrivePath& gdrivePath) :
         gdrivePath_(gdrivePath)
     {
-        worker_ = InterruptibleThread([asyncStreamOut = this->asyncStreamIn_, gdrivePath]
+        worker_ = InterruptibleThread([asyncStreamOut = asyncStreamIn_, gdrivePath]
         {
             setCurrentThreadName(Zstr("Istream ") + utfTo<Zstring>(getGdriveDisplayPath(gdrivePath)));
             try
@@ -3209,11 +3205,11 @@ struct OutputStreamGdrive : public AFS::OutputStreamImpl
             parentId = ps.existingItemId;
         });
 
-        worker_ = InterruptibleThread([gdrivePath, modTime, fileName, asyncStreamIn = this->asyncStreamOut_,
+        worker_ = InterruptibleThread([gdrivePath, modTime, fileName, asyncStreamIn = asyncStreamOut_,
                                        pFilePrint = std::move(promFilePrint),
                                        parentId   = std::move(parentId),
                                        aai        = std::move(aai),
-                                       pal        = std::move(pal)]() mutable
+                                       pal        = std::move(pal)] mutable
         {
             assert(pal); //bind life time to worker thread!
             setCurrentThreadName(Zstr("Ostream ") + utfTo<Zstring>(getGdriveDisplayPath(gdrivePath)));
@@ -3652,7 +3648,7 @@ private:
     //symlink handling: follow
     //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
     //=> actual behavior: 1. fails or 2. creates duplicate (unlikely)
-    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& attrSource, //throw FileError, (ErrorFileLocked), (X)
+    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& sourceAttr, //throw FileError, (ErrorFileLocked), (X)
                                           const AbstractPath& targetPath, bool copyFilePermissions, const IoCallback& notifyUnbufferedIO /*throw X*/) const override
     {
         //no native Google Drive file copy => use stream-based file copy:
@@ -3664,7 +3660,7 @@ private:
         if (!equalAsciiNoCase(gdriveLogin_.email, fsTarget.gdriveLogin_.email))
             //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
             //=> actual behavior: 1. fails or 2. creates duplicate (unlikely)
-            return copyFileAsStream(sourcePath, attrSource, targetPath, notifyUnbufferedIO); //throw FileError, (ErrorFileLocked), X
+            return copyFileAsStream(sourcePath, sourceAttr, targetPath, notifyUnbufferedIO); //throw FileError, (ErrorFileLocked), X
         //else: copying files within account works, e.g. between My Drive <-> shared drives
 
         try
@@ -4094,7 +4090,7 @@ AbstractPath fff::createItemPathGdrive(const Zstring& itemPathPhrase) //noexcept
     const ZstringView options  =  afterFirst<ZstringView>(pathPhrase, Zstr('|'), IfNotFoundReturn::none);
 
     auto it = std::find_if(fullPath.begin(), fullPath.end(), [](Zchar c) { return c == '/' || c == '\\'; });
-    const ZstringView emailAndDrive = makeStringView(fullPath.begin(), it);
+    const ZstringView emailAndDrive(fullPath.begin(), it);
     const AfsPath itemPath = sanitizeDeviceRelativePath({it, fullPath.end()});
 
     GdriveLogin login

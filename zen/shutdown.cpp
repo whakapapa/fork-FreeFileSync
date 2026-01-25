@@ -6,6 +6,7 @@
 
 #include "shutdown.h"
 #include "thread.h"
+#include "file_error.h"
     #include <zen/process_exec.h>
 
 

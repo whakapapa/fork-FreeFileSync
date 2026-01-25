@@ -260,10 +260,7 @@ BinContainer unbufferedLoad(Function tryRead /*(void* buffer, size_t bytesToRead
     BinContainer buf;
     for (;;)
     {
-#ifndef ZEN_HAVE_RESIZE_AND_OVERWRITE
-#error include legacy_compiler.h!
-#endif
-#if ZEN_HAVE_RESIZE_AND_OVERWRITE //permature(?) perf optimization; avoid needless zero-initialization:
+#if 1 //permature(?) perf optimization; avoid needless zero-initialization:
         size_t bytesRead = 0;
         buf.resize_and_overwrite(buf.size() + blockSize, [&, bufSizeOld = buf.size()](char* rawBuf, size_t /*rawBufSize: caveat: may be larger than what's requested*/)
                                  //permature(?) perf optimization; avoid needless zero-initialization:

@@ -338,11 +338,11 @@ UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, siz
 namespace impl
 {
 template <class TargetString, class SourceString> inline
-TargetString utfTo(const SourceString& str, std::true_type) { return copyStringTo<TargetString>(str); }
+TargetString utfTo2(const SourceString& str, std::true_type) { return copyStringTo<TargetString>(str); }
 
 
 template <class TargetString, class SourceString> inline
-TargetString utfTo(const SourceString& str, std::false_type)
+TargetString utfTo2(const SourceString& str, std::false_type)
 {
     using CharSrc = GetCharTypeT<SourceString>;
     using CharTrg = GetCharTypeT<TargetString>;
@@ -362,7 +362,7 @@ TargetString utfTo(const SourceString& str, std::false_type)
 template <class TargetString, class SourceString> inline
 TargetString utfTo(const SourceString& str)
 {
-    return impl::utfTo<TargetString>(str, std::bool_constant<sizeof(GetCharTypeT<SourceString>) == sizeof(GetCharTypeT<TargetString>)>());
+    return impl::utfTo2<TargetString>(str, std::bool_constant<sizeof(GetCharTypeT<SourceString>) == sizeof(GetCharTypeT<TargetString>)>());
 }
 }
 

@@ -59,7 +59,7 @@ void FolderHistoryBox::onRequireHistoryUpdate(wxEvent& event)
 //set value and update list are technically entangled: see potential bug description below
 void FolderHistoryBox::setValueAndUpdateList(const wxString& folderPathPhrase)
 {
-    //populate selection list....
+    //populate selection list...
     std::vector<wxString> items;
     {
         auto trimTrailingSep = [](Zstring path)

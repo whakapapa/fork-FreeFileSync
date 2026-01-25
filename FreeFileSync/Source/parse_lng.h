@@ -168,8 +168,6 @@ struct Token
 class KnownTokens
 {
 public:
-    KnownTokens() {} //clang wants it, clang gets it
-
     using TokenMap = std::unordered_map<TokenType, std::string>;
 
     const TokenMap& getList() const { return tokens_; }
@@ -266,7 +264,7 @@ private:
 
     bool startsWith(const std::string& prefix) const
     {
-        return zen::startsWith(zen::makeStringView(pos_, stream_.end()), prefix);
+        return zen::startsWith(std::string_view(pos_, stream_.end()), prefix);
     }
 
     static void normalize(std::string& text)

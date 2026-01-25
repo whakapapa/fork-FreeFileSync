@@ -67,7 +67,7 @@ public:
 
         auto postBytesSent = std::make_shared<std::atomic<int64_t>>(0);
 
-        worker_ = InterruptibleThread([asyncStreamOut = this->asyncStreamIn_, promHeader, headers = std::move(headers), postBytesSent,
+        worker_ = InterruptibleThread([asyncStreamOut = asyncStreamIn_, promHeader, headers = std::move(headers), postBytesSent,
                                        server, useTls, caCertFilePath, userAgent = utfTo<std::string>(userAgent),
                                        postBuf = postBuf ? std::optional<std::string>(*postBuf) : std::nullopt, //[!] life-time!
                                        serverRelPath = utfTo<std::string>(page)]

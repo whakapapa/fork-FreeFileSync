@@ -13,6 +13,7 @@ using namespace zen;
 
 namespace
 {
+
 Zstring getUnicodeNormalForm_NonAsciiValidUtf(const Zstring& str, UnicodeNormalForm form)
 {
     //Example: const char* decomposed  = "\x6f\xcc\x81"; //ó
@@ -81,19 +82,10 @@ Zstring getValidUtf(const Zstring& str)
 }
 
 
-Zstring getUpperCaseAscii(const Zstring& str)
-{
-    assert(isAsciiString(str));
-
-    Zstring output = str;
-    for (Zchar& c : output)  //identical to LCMapStringEx(), g_unichar_toupper(), CFStringUppercase() [verified!]
-        c = asciiToUpper(c); //
-    return output;
-}
-
-
 Zstring getUpperCaseNonAscii(const Zstring& str)
 {
+    assert(!isAsciiString(str));
+
     const Zstring& strValidUtf = getValidUtf(str);
     try
     {
@@ -133,7 +125,7 @@ Zstring getUnicodeNormalForm(const Zstring& str, UnicodeNormalForm form)
 Zstring getUpperCase(const Zstring& str)
 {
     return isAsciiString(str) ? //fast path: in the range of 3.5ns
-           getUpperCaseAscii(str) :
+           getAsciiUpperCase(str) :
            getUpperCaseNonAscii(str); //slow path
 }
 
@@ -286,8 +278,8 @@ std::weak_ordering compareNoCase(const Zstring& lhs, const Zstring& rhs)
     //can't we instead skip isAsciiString() and compare chars as long as isAsciiChar()?
     // => NOPE! e.g. decomposed Unicode! A seemingly single isAsciiChar() might be followed by a combining character!!!
 
-    return (isAsciiL ? getUpperCaseAscii(lhs) : getUpperCaseNonAscii(lhs)) <=>
-           (isAsciiR ? getUpperCaseAscii(rhs) : getUpperCaseNonAscii(rhs));
+    return (isAsciiL ? getAsciiUpperCase(lhs) : getUpperCaseNonAscii(lhs)) <=>
+           (isAsciiR ? getAsciiUpperCase(rhs) : getUpperCaseNonAscii(rhs));
 }
 
 
@@ -310,6 +302,6 @@ bool equalNoCase(const Zstring& lhs, const Zstring& rhs)
         return true;
     }
 
-    return (isAsciiL ? getUpperCaseAscii(lhs) : getUpperCaseNonAscii(lhs)) ==
-           (isAsciiR ? getUpperCaseAscii(rhs) : getUpperCaseNonAscii(rhs));
+    return (isAsciiL ? getAsciiUpperCase(lhs) : getUpperCaseNonAscii(lhs)) ==
+           (isAsciiR ? getAsciiUpperCase(rhs) : getUpperCaseNonAscii(rhs));
 }

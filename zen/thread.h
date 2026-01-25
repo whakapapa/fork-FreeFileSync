@@ -13,7 +13,6 @@
 #include "ring_buffer.h"
 #include "zstring.h"
 
-
 namespace zen
 {
 class InterruptionStatus;
@@ -31,8 +30,8 @@ public:
             requestStop();
             join();
         }
-        stdThread_ = std::move(tmp.stdThread_);
         intStatus_ = std::move(tmp.intStatus_);
+        stdThread_ = std::move(tmp.stdThread_);
         return *this;
     }
 
@@ -54,8 +53,8 @@ public:
     void detach   () { stdThread_.detach(); }
 
 private:
-    std::thread stdThread_;
     std::shared_ptr<InterruptionStatus> intStatus_ = std::make_shared<InterruptionStatus>();
+    std::thread stdThread_;
 };
 
 
@@ -226,10 +225,10 @@ private:
     {
         Zstring threadName = groupName_ + Zstr('[') + numberTo<Zstring>(worker_.size() + 1) + Zstr('/') + numberTo<Zstring>(threadCountMax_) + Zstr(']');
 
-        worker_.emplace_back([workLoad_ /*clang bug*/= workLoad_ /*share ownership!*/, threadName = std::move(threadName)]() mutable //don't capture "this"! consider detach() and move operations
+        worker_.emplace_back([sharedWorkLoad = workLoad_, threadName = std::move(threadName)] mutable //don't capture "this"! consider detach() and move operations
         {
             setCurrentThreadName(threadName);
-            WorkLoad& workLoad = workLoad_.ref();
+            WorkLoad& workLoad = sharedWorkLoad.ref();
 
             std::unique_lock dummy(workLoad.lock);
             for (;;)
@@ -292,7 +291,7 @@ auto runAsync(Function&& fun, std::true_type /*copy-constructible*/)
     //note: std::packaged_task does NOT support move-only function objects!
     std::packaged_task<ResultType()> pt(std::forward<Function>(fun));
     auto fut = pt.get_future();
-    std::thread(std::move(pt)).detach(); //we have to explicitly detach since C++11: [thread.thread.destr] ~thread() calls std::terminate() if joinable()!!!
+    std::thread(std::move(pt)).detach();
     return fut;
 }
 
@@ -301,8 +300,8 @@ template <class Function> inline
 auto runAsync(Function&& fun, std::false_type /*copy-constructible*/)
 {
     //support move-only function objects!
-    auto sharedFun = std::make_shared<Function>(std::forward<Function>(fun));
-    return runAsync([sharedFun] { return (*sharedFun)(); }, std::true_type());
+    return runAsync([sharedFun = std::make_shared<Function>(std::forward<Function>(fun))]
+    { return (*sharedFun)(); }, std::true_type());
 }
 }
 
@@ -376,9 +375,10 @@ template <class T>
 template <class Fun> inline
 void AsyncFirstResult<T>::addJob(Fun&& f) //f must return a std::optional<T> containing a value on success
 {
-    std::thread t([asyncResult = this->asyncResult_, f = std::forward<Fun>(f)] { asyncResult->reportFinished(f()); });
+    //uncaught exception? => let the app crash at throw location: requires InterruptibleThread, not std::thread!
+    InterruptibleThread t([asyncResult = asyncResult_, f = std::forward<Fun>(f)] { asyncResult->reportFinished(f()); });
     ++jobsTotal_;
-    t.detach(); //we have to be explicit since C++11: [thread.thread.destr] ~thread() calls std::terminate() if joinable()!!!
+    t.detach();
 }
 
 
@@ -505,8 +505,9 @@ void interruptibleSleep(const std::chrono::duration<Rep, Period>& relTime) //thr
 template <class Function> inline
 InterruptibleThread::InterruptibleThread(Function&& f)
 {
-    stdThread_ = std::thread([f = std::forward<Function>(f),
-                              intStatus = this->intStatus_]() mutable
+    stdThread_ = std::thread(
+    [f = std::forward<Function>(f),
+     intStatus = intStatus_] mutable
     {
         assert(!impl::threadLocalInterruptionStatus);
         impl::threadLocalInterruptionStatus = intStatus.get();

@@ -113,12 +113,12 @@ private:
         {
             auto it2 = std::find_if(it1, message.end(), [](const char c) { return c == '\n'; });
             if (textRow == 0)
-                return makeStringView(it1, it2 - it1);
+                return {it1, makeUnsigned(it2 - it1)};
 
             if (it2 == message.end())
             {
                 assert(false);
-                return makeStringView(it1, 0);
+                return {it1, 0};
             }
 
             it1 = it2 + 1; //skip newline
@@ -197,7 +197,7 @@ public:
         }();
 
         if (drawBottomLine)
-            clearArea(dc, {rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1)}, getColorGridLine());
+        drawRectangleBorder(dc, rect, getColorGridLine(), dipToWxsize(1), wxBOTTOM);
         //--------------------------------------------------------
     }
 
@@ -418,7 +418,7 @@ void LogPanel::onMsgGridContext(GridContextMenuEvent& event)
 {
     const std::vector<size_t> selection = m_gridMessages->getSelectedRows();
 
-    const size_t rowCount = [&]() -> size_t
+    const size_t rowCount = [&] -> size_t
     {
         if (auto prov = m_gridMessages->getDataProvider())
             return prov->getRowCount();
@@ -540,6 +540,6 @@ void LogPanel::copySelectionToClipboard()
     }
     catch (const std::bad_alloc& e)
     {
-        showNotificationDialog(nullptr, DialogInfoType::error, PopupDialogCfg().setMainInstructions(_("Out of memory.") + L' ' + utfTo<std::wstring>(e.what())));
+        showNotificationDialog(nullptr, DialogInfoType::error, PopupDialogCfg().setMainInstructions(_("Out of memory.") + L"\n\n" + utfTo<std::wstring>(e.what())));
     }
 }

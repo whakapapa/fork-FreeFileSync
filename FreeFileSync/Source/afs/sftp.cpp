@@ -304,7 +304,7 @@ public:
                             }
                             else
                                 for (int i = 0; i < num_prompts; ++i)
-                                    unexpectedPrompts += (unexpectedPrompts.empty() ? L"" : L"|") + utfTo<std::wstring>(makeStringView(reinterpret_cast<const char*>(prompts[i].text), prompts[i].length));
+                                    unexpectedPrompts += (unexpectedPrompts.empty() ? L"" : L"|") + utfTo<std::wstring>(std::string_view(reinterpret_cast<const char*>(prompts[i].text), prompts[i].length));
                         };
                         using AuthCbType = decltype(authCallback);
 
@@ -366,12 +366,12 @@ public:
                     {
                         //libssh2_userauth_publickey_frommemory()'s "Unable to extract public key from private key" isn't exactly *helpful*
                         //=> detect invalid key files and give better error message:
-                        const wchar_t* invalidKeyFormat = [&]() -> const wchar_t*
+                        const wchar_t* invalidKeyFormat = [&] -> const wchar_t*
                         {
                             //"-----BEGIN PUBLIC KEY-----"      OpenSSH SSH-2 public key (X.509 SubjectPublicKeyInfo) = PKIX
                             //"-----BEGIN RSA PUBLIC KEY-----"  OpenSSH SSH-2 public key (PKCS#1 RSAPublicKey)
                             //"---- BEGIN SSH2 PUBLIC KEY ----" SSH-2 public key (RFC 4716 format)
-                            const std::string_view firstLine = makeStringView(pkStream.begin(), std::find_if(pkStream.begin(), pkStream.end(), isLineBreak<char>));
+                            const std::string_view firstLine(pkStream.begin(), std::find_if(pkStream.begin(), pkStream.end(), isLineBreak<char>));
                             if (contains(firstLine, "PUBLIC KEY"))
                                 return L"OpenSSH public key";
 
@@ -1163,7 +1163,7 @@ std::vector<SftpItem> getDirContentFlat(const SftpLogin& login, const AfsPath& d
         if (rc == 0) //no more items
             return output;
 
-        const std::string_view sftpItemName = makeStringView(buf.data(), rc);
+        const std::string_view sftpItemName(buf.data(), rc);
 
         if (sftpItemName == "." || sftpItemName == "..") //check needed for SFTP, too!
             continue;
@@ -1737,7 +1737,7 @@ private:
         runSftpCommand(login_, "libssh2_sftp_realpath", //throw SysError, SysErrorSftpProtocol
         [&](const SshSession::Details& sd) { return rc = ::libssh2_sftp_realpath(sd.sftpChannel, sftpPath, buf.data(), bufSize); }); //noexcept!
 
-        const std::string_view sftpPathTrg = makeStringView(buf.data(), rc);
+        const std::string_view sftpPathTrg(buf.data(), rc);
         if (!startsWith(sftpPathTrg, '/'))
             throw SysError(replaceCpy<std::wstring>(L"Invalid path %x.", L"%x", fmtPath(utfTo<std::wstring>(sftpPathTrg))));
 
@@ -1806,7 +1806,7 @@ private:
 
     //symlink handling: follow
     //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
-    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& attrSource, //throw FileError, (ErrorFileLocked), X
+    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& sourceAttr, //throw FileError, (ErrorFileLocked), X
                                           const AbstractPath& targetPath, bool copyFilePermissions, const IoCallback& notifyUnbufferedIO /*throw X*/) const override
     {
         //no native SFTP file copy => use stream-based file copy:
@@ -1814,7 +1814,7 @@ private:
             throw FileError(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(AFS::getDisplayPath(targetPath))), _("Operation not supported by device."));
 
         //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
-        return copyFileAsStream(sourcePath, attrSource, targetPath, notifyUnbufferedIO); //throw FileError, (ErrorFileLocked), X
+        return copyFileAsStream(sourcePath, sourceAttr, targetPath, notifyUnbufferedIO); //throw FileError, (ErrorFileLocked), X
     }
 
     //symlink handling: follow
@@ -2162,7 +2162,7 @@ AbstractPath fff::createItemPathSftp(const Zstring& itemPathPhrase) //noexcept
     const ZstringView options  =  afterFirst(fullPathOpt, Zstr('|'), IfNotFoundReturn::none);
 
     auto it = std::find_if(fullPath.begin(), fullPath.end(), [](Zchar c) { return c == '/' || c == '\\'; });
-    const ZstringView serverPort = makeStringView(fullPath.begin(), it);
+    const ZstringView serverPort(fullPath.begin(), it);
     const AfsPath serverRelPath = sanitizeDeviceRelativePath({it, fullPath.end()});
 
     if (std::optional<std::pair<Zstring, int /*optional: port*/>> ip6AndPort = parseIpv6Address(serverPort)) //e.g. 2001:db8::ff00:42:8329 or [::1]:80

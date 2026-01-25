@@ -272,7 +272,7 @@ FolderComparison ComparisonBuffer::execute(const std::vector<std::pair<ResolvedF
     std::vector<std::pair<ResolvedFolderPair, FolderPairCfg>> workLoadByContent;
     for (const auto& [folderPair, fpCfg] : workLoad)
         if (fpCfg.compareVar == CompareVariant::content)
-            workLoadByContent.push_back({folderPair, fpCfg});
+            workLoadByContent.emplace_back(folderPair, fpCfg);
 
     std::vector<SharedRef<BaseFolderPair>> outputByContent = compareByContent(workLoadByContent);
     auto itOByC = outputByContent.begin();
@@ -1190,7 +1190,7 @@ FolderComparison fff::compare(WarningDialogs& warnings,
     }
     catch (const std::bad_alloc& e)
     {
-        callback.reportFatalError(_("Out of memory.") + L' ' + utfTo<std::wstring>(e.what()));
+        callback.reportFatalError(_("Out of memory.") + L"\n\n" + utfTo<std::wstring>(e.what()));
         return {};
     }
 }

@@ -107,7 +107,7 @@ void FileView::updateView(Predicate pred)
 
                 //save row position to identify first child *on sorted subview* of FolderPair or BaseFolderPair in case latter are filtered out
                 for (const ContainerObject* parent : parentsBuf)
-                    if (const auto [it, inserted] = this->rowPositionsFirstChild_.emplace(parent, row);
+                    if (const auto [it, inserted] = rowPositionsFirstChild_.emplace(parent, row);
                         !inserted) //=> parents further up in hierarchy already inserted!
                         break;
 

@@ -37,8 +37,8 @@ enum class ConfirmationButton3
 };
 enum class ConfirmationButton
 {
-    cancel = static_cast<int>(ConfirmationButton3::cancel), //[!] Clang requires "static_cast"
-    accept = static_cast<int>(ConfirmationButton3::accept), //
+    cancel = static_cast<int>(ConfirmationButton3::cancel),
+    accept = static_cast<int>(ConfirmationButton3::accept),
 };
 enum class ConfirmationButton2
 {

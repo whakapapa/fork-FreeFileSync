@@ -58,21 +58,23 @@ void drawFilledRectangle(wxDC& dc, wxRect rect, const wxColor& innerCol, const w
 
 
 inline
-void drawRectangleBorder(wxDC& dc, const wxRect& rect, const wxColor& col, int borderSize)
+void drawRectangleBorder(wxDC& dc, const wxRect& rect, const wxColor& col, int borderSize, int sides = wxALL)
 {
     assert(col.IsSolid());
     if (rect.width  > 0 &&
         rect.height > 0)
     {
-        if (2 * borderSize >= std::min(rect.width, rect.height))
-            return clearArea(dc, rect, col);
-
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.SetBrush(col);
-        dc.DrawRectangle(rect.x, rect.y,                           borderSize, rect.height); //left
-        dc.DrawRectangle(rect.x + rect.width - borderSize, rect.y, borderSize, rect.height); //right
-        dc.DrawRectangle(rect.x, rect.y,                            rect.width, borderSize); //top
-        dc.DrawRectangle(rect.x, rect.y + rect.height - borderSize, rect.width, borderSize); //bottom
+
+        if ((((sides & wxLEFT) ? borderSize : 0) + ((sides & wxRIGHT ) ? borderSize : 0) >= rect.width) ||
+            (((sides & wxTOP ) ? borderSize : 0) + ((sides & wxBOTTOM) ? borderSize : 0) >= rect.height))
+            return dc.DrawRectangle(rect);
+
+        if (sides & wxLEFT)   dc.DrawRectangle(rect.x, rect.y,                           borderSize, rect.height);
+        if (sides & wxRIGHT)  dc.DrawRectangle(rect.x + rect.width - borderSize, rect.y, borderSize, rect.height);
+        if (sides & wxTOP)    dc.DrawRectangle(rect.x, rect.y,                            rect.width, borderSize);
+        if (sides & wxBOTTOM) dc.DrawRectangle(rect.x, rect.y + rect.height - borderSize, rect.width, borderSize);
     }
 }
 
@@ -91,11 +93,8 @@ void drawRectangleBorder(wxDC& dc, const wxRect& rect, const wxColor& col, int b
 inline
 double getScreenDpiScale()
 {
-    //GTK2 doesn't properly support high DPI: https://freefilesync.org/forum/viewtopic.php?t=6114
-    //=> requires general fix at wxWidgets-level
-
     //https://github.com/wxWidgets/wxWidgets/blob/d9d05c2bb201078f5e762c42458ca2f74af5b322/include/wx/window.h#L2060
-    const double scale = 1.0; //e.g. macOS, GTK3
+    const double scale = 1.0;
 
     return scale;
 }
@@ -178,7 +177,7 @@ public:
             {
                 dc.SetClippingRegion(tmp); //new clipping region is intersection of given and previously set regions
                 it->second = tmp;
-                clippingDone = true;
+                clippingDone_ = true;
             }
         }
         else
@@ -204,7 +203,7 @@ public:
             {
                 dc.SetClippingRegion(tmp);
                 clippingAreas_.emplace(&dc, tmp);
-                clippingDone = true;
+                clippingDone_ = true;
                 recursionBegin_ = true;
             }
         }
@@ -212,7 +211,7 @@ public:
 
     ~RecursiveDcClipper()
     {
-        if (clippingDone)
+        if (clippingDone_)
         {
             dc_.DestroyClippingRegion();
             if (oldRect_)
@@ -234,7 +233,7 @@ private:
     inline static std::unordered_map<wxDC*, wxRect> clippingAreas_;
 
     bool recursionBegin_ = false;
-    bool clippingDone = false;
+    bool clippingDone_ = false;
     std::optional<wxRect> oldRect_;
     wxDC& dc_;
 };

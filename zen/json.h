@@ -33,10 +33,9 @@ public:
     void set(std::string&& name, T&& value);
 
     //-------------------------------------------------------------
-#warning("review default operators")
     JsonObject() = default;
 
-    JsonObject(const JsonObject& other) : values_(other.values_) { initLookup(); }
+    JsonObject(const JsonObject& other);
 
     JsonObject& operator=(const JsonObject& other) { JsonObject(other).swap(*this); return *this; }
 
@@ -44,9 +43,7 @@ public:
     JsonObject& operator=(JsonObject&& tmp) noexcept { swap(tmp); return *this; }
 
 private:
-    void swap(JsonObject& other) noexcept { values_.swap(other.values_); valuesByName_.swap(other.valuesByName_); }
-
-    void initLookup();
+    void swap(JsonObject& other) noexcept;
 
     //"[...] most implementations of JSON libraries do not accept duplicate keys [...]" => fine!
     Item                                                 values_;       //in order of insertion
@@ -123,11 +120,18 @@ std::optional<std::string> getPrimitiveFromJsonObject(const JsonValue& jvalue, c
 
 
 inline
-void JsonObject::initLookup()
+JsonObject::JsonObject(const JsonObject& other) : values_(other.values_)
 {
-    assert(valuesByName_.empty());
     for (auto it = values_.begin(); it != values_.end(); ++it)
         valuesByName_.emplace(it->first, it);
+}
+
+
+inline
+void JsonObject::swap(JsonObject& other) noexcept
+{
+    values_      .swap(other.values_);       //
+    valuesByName_.swap(other.valuesByName_); //swap does *not* invalidate values_-iterators!
 }
 
 
@@ -147,8 +151,7 @@ void JsonObject::set(std::string&& name, T&& value)
         it->second->second = JsonValue(std::forward<T>(value));
     else
     {
-        //values_.emplace_back(std::move(name), std::forward<T>(value)); -> not yet on macOS/clang
-        values_.push_back({std::move(name), JsonValue(std::forward<T>(value))});
+        values_.emplace_back(std::move(name), std::forward<T>(value));
         valuesByName_.emplace(values_.back().first, --values_.end());
     }
 }
@@ -482,7 +485,7 @@ private:
 
     bool startsWith(const std::string& prefix) const
     {
-        return zen::startsWith(makeStringView(pos_, stream_.end()), prefix);
+        return zen::startsWith(std::string_view(pos_, stream_.end()), prefix);
     }
 
     const std::string stream_;

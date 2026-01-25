@@ -440,7 +440,7 @@ std::map<DirectoryKey, DirectoryValue> fff::parallelFolderScan(const std::set<Di
         for (const DirectoryKey& key : dirKeys)
             workload.emplace(key, &output[key]); //=> DirectoryValue* unshared for lock-free worker-thread access
 
-        worker.emplace_back([afsDevice /*clang bug*/= afsDevice, workload, threadIdx, &acb, parallelOps, threadName = std::move(threadName)]() mutable
+        worker.emplace_back([afsDevice, workload, threadIdx, &acb, parallelOps, threadName = std::move(threadName)] mutable
         {
             setCurrentThreadName(threadName);
 

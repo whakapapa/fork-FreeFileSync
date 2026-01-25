@@ -19,6 +19,18 @@ using namespace fff;
 
 namespace
 {
+const TranslationInfo transInfoDefault
+{
+    .languageID     = wxLANGUAGE_ENGLISH_US,
+    .locale         = "en_US",
+    .languageName   = L"English",
+    .translatorName = L"Zenju",
+    .languageFlag   = "flag_usa",
+    .lngFileName    = Zstr(""),
+    .lngStream      = "",
+};
+
+
 class FFSTranslation : public TranslationHandler
 {
 public:
@@ -135,19 +147,7 @@ std::vector<TranslationInfo> loadTranslations(const Zstring& zipPath) //throw Fi
     }();
     //--------------------------------------------------------------------
 
-    std::vector<TranslationInfo> translations
-    {
-        //default entry:
-        {
-            .languageID     = wxLANGUAGE_ENGLISH_US,
-            .locale         = "en_US",
-            .languageName   = L"English",
-            .translatorName = L"Zenju",
-            .languageFlag   = "flag_usa",
-            .lngFileName    = Zstr(""),
-            .lngStream      = "",
-        }
-    };
+    std::vector<TranslationInfo> translations{transInfoDefault};
 
     for (/*const*/ auto& [filePath, stream] : streams)
         try
@@ -314,7 +314,7 @@ private:
 };
 
 
-std::vector<TranslationInfo> globalTranslations;
+std::vector<TranslationInfo> globalTranslations{transInfoDefault};
 wxLanguage globalLang = wxLANGUAGE_UNKNOWN;
 }
 
@@ -350,7 +350,7 @@ void fff::localizationInit(const Zstring& zipPath) //throw FileError
 
     //throw *after* mandatory initialization: setLanguage() requires wxTranslations::Get()!
 
-    assert(globalTranslations.empty());
+    assert(globalTranslations.size() == 1);
     globalTranslations = loadTranslations(zipPath); //throw FileError
 
     setLanguage(getDefaultLanguage()); //throw FileError
@@ -417,7 +417,7 @@ void fff::setLanguage(wxLanguage lng) //throw FileError
     //------------------------------------------------------------
 
     globalLang = lng;
-    
+
     //add translation for wxWidgets-internal strings:
     std::map<std::string, std::wstring> transMapping =
     {

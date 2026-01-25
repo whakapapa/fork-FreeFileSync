@@ -400,7 +400,7 @@ void blendPixel(const Kernel_3x3& ker,
         auto eq   = [&](uint32_t pix1, uint32_t pix2) { return ColorDistance::dist(pix1, pix2, cfg.testAttribute) < cfg.equalColorTolerance; };
         auto dist = [&](uint32_t pix1, uint32_t pix2) { return ColorDistance::dist(pix1, pix2, cfg.testAttribute); };
 
-        const bool doLineBlend = [&]() -> bool
+        const bool doLineBlend = [&] -> bool
         {
             if (getBottomR(blend) >= BLEND_DOMINANT)
                 return true;

@@ -107,7 +107,7 @@ OutputIterator decodeBase64(InputIterator first, InputIterator last, OutputItera
 
     const unsigned char INDEX_END = INDEX_PAD + 1;
 
-    auto readIndex = [&]() -> unsigned char //return index within [0, 64] or INDEX_END if end of input
+    auto readIndex = [&] -> unsigned char //return index within [0, 64] or INDEX_END if end of input
     {
         for (;;)
         {

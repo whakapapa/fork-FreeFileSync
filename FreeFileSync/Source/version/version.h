@@ -3,7 +3,7 @@
 
 namespace fff
 {
-const char ffsVersion[] = "14.6"; //internal linkage!
+const char ffsVersion[] = "14.7"; //internal linkage!
 const char FFS_VERSION_SEPARATOR = '.';
 }
 

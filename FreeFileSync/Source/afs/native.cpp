@@ -558,7 +558,7 @@ private:
     //symlink handling: follow
     //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
     //=> actual behavior: fail with clear error message
-    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& attrSource, //throw FileError, ErrorFileLocked, X
+    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& sourceAttr, //throw FileError, ErrorFileLocked, X
                                           const AbstractPath& targetPath, bool copyFilePermissions, const IoCallback& notifyUnbufferedIO /*throw X*/) const override
     {
         const Zstring nativePathTarget = static_cast<const NativeFileSystem&>(targetPath.afsDevice.ref()).getNativePath(targetPath.afsPath);

@@ -139,13 +139,8 @@ ImageHolder imageHolderFromGicon(GIcon& gicon, int maxSize) //throw SysError
                                                                    GTK_ICON_LOOKUP_USE_BUILTIN); //GtkIconLookupFlags flags
     if (!iconInfo)
         throw SysError(formatSystemError("gtk_icon_theme_lookup_by_gicon", L"", L"Icon not available."));
-#if GTK_MAJOR_VERSION == 2
-    ZEN_ON_SCOPE_EXIT(::gtk_icon_info_free(iconInfo));
-#elif GTK_MAJOR_VERSION == 3
     ZEN_ON_SCOPE_EXIT(::g_object_unref(iconInfo));
-#else
-#error unknown GTK version!
-#endif
+
     GError* error = nullptr;
     ZEN_ON_SCOPE_EXIT(if (error) ::g_error_free(error));
 
@@ -154,7 +149,7 @@ ImageHolder imageHolderFromGicon(GIcon& gicon, int maxSize) //throw SysError
         throw SysError(formatGlibError("gtk_icon_info_load_icon", error));
     ZEN_ON_SCOPE_EXIT(::g_object_unref(pixBuf));
 
-    //we may have to shrink (e.g. GTK3, openSUSE): "an icon theme may have icons that differ slightly from their nominal sizes"
+    //we may have to shrink (e.g. openSUSE + GTK3): "an icon theme may have icons that differ slightly from their nominal sizes"
     return copyToImageHolder(*pixBuf, maxSize); //throw SysError
 }
 }

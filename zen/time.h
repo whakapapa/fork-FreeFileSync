@@ -301,7 +301,7 @@ TimeComp parseTime(const String& format, const String2& str)
         if (!std::all_of(itStr, itStr + digitCount, isDigit<CharType>))
             return false;
 
-        result = zen::stringTo<int>(makeStringView(itStr, digitCount));
+        result = zen::stringTo<int>(std::basic_string_view<CharType>(itStr, digitCount));
         itStr += digitCount;
         return true;
     };
@@ -339,7 +339,7 @@ TimeComp parseTime(const String& format, const String2& str)
                     const char* months[] = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"};
                     auto itMonth = std::find_if(std::begin(months), std::end(months), [&](const char* month)
                     {
-                        return equalAsciiNoCase(makeStringView(itStr, 3), month);
+                        return equalAsciiNoCase(std::basic_string_view<CharType>(itStr, 3), month);
                     });
                     if (itMonth == std::end(months))
                         return TimeComp();

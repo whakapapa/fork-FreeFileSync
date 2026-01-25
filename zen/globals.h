@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <memory>
+#include <cstdlib> //std::atexit (for macOS)
 #include <utility>
 #include "scope_guard.h"
 

@@ -104,7 +104,7 @@ public:
     void renderCell(wxDC& dc, const wxRect& rect, size_t row, ColumnType colType, bool enabled, bool selected, HoverArea rowHover) override
     {
         //draw border on right
-        clearArea(dc, {rect.x + rect.width - dipToWxsize(1), rect.y, dipToWxsize(1), rect.height}, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW));
+                drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), dipToWxsize(1), wxRIGHT);
 
         wxRect rectTmp = rect;
         rectTmp.x     += getColumnGapLeft();
@@ -362,10 +362,9 @@ RenameDialog::RenameDialog(wxWindow* parent,
 
     //-----------------------------------------------------------
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
-#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-#endif
+
     Center(); //apply *after* dialog size change!
 
     m_textCtrlNewName->SetFocus(); //[!] required *before* SetSelection() on wxGTK

@@ -57,7 +57,11 @@ wxColor getColorSymlinkBackground() { return {238, 201, 0}; } //orange
 wxColor getColorInactiveBack() { return wxSystemSettings::GetAppearance().IsDark() ? 0x6c6c6c /*medium grey*/ : 0xe4e4e4 /*light grey*/; }
 wxColor getColorInactiveText() { return wxSystemSettings::GetAppearance().IsDark() ? 0xffffff /*white*/       : 0x404040 /*dark grey*/; }
 
-wxColor getColorGridLine() { return wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW); }
+wxColor getColorGridLine()
+{
+    return enhanceContrast(wxSystemSettingsNative::GetColour(wxSYS_COLOUR_BTNSHADOW),
+                           wxSystemSettingsNative::GetColour(wxSYS_COLOUR_WINDOW), 3 /*contrastRatioMin*/);
+}
 
 const int FILE_GRID_GAP_SIZE_DIP = 2;
 const int FILE_GRID_GAP_SIZE_WIDE_DIP = 6;
@@ -364,7 +368,7 @@ public:
         for (auto it = itemPath.begin() + 1; it != itemPath.end() - 1; ++it)
             if (*it == L'/' ||
                 *it == L'\\')
-                subComp.push_back(makeStringView(itemPath.begin(), it));
+                subComp.emplace_back(itemPath.begin(), it);
 
         subComp.push_back(itemPath);
 
@@ -430,9 +434,9 @@ public:
                 const ptrdiff_t currentRow = rowFirst - (preloadSize + 1) / 2 + getAlternatingPos(i, visibleRowCount + preloadSize); //for odd preloadSize start one row earlier
 
                 if (const FileSystemObject* fsObj = getFsObject(currentRow))
-                    if (getIconInfo(*fsObj).type == IconType::standard)
-                        if (!iconBuf->readyForRetrieval(fsObj->template getAbstractPath<side>()))
-                            newLoad.emplace_back(i, fsObj->template getAbstractPath<side>()); //insert least-important items on outer rim first
+                    if (!fsObj->isEmpty<side>() && /*bool isFileOrSymlink = */ !dynamic_cast<const FolderPair*>(fsObj) &&
+                        !iconBuf->readyForRetrieval(fsObj->template getAbstractPath<side>()))
+                        newLoad.emplace_back(i, fsObj->template getAbstractPath<side>()); //insert least-important items on outer rim first
             }
         }
         else assert(false);
@@ -452,7 +456,7 @@ public:
 
                 if (isFailedLoad(currentRow)) //find failed attempts to load icon
                     if (const FileSystemObject* fsObj = getFsObject(currentRow))
-                        if (getIconInfo(*fsObj).type == IconType::standard)
+                        if (!fsObj->isEmpty<side>() &&  /*bool isFileOrSymlink = */ !dynamic_cast<const FolderPair*>(fsObj))
                         {
                             //test if they are already loaded in buffer:
                             if (iconBuf->readyForRetrieval(fsObj->template getAbstractPath<side>()))
@@ -559,10 +563,10 @@ private:
 
     void renderRowBackgound(wxDC& dc, const wxRect& rect, size_t row, bool enabled, bool selected, HoverArea rowHover) override
     {
-        const FileView::PathDrawInfo pdi = getDataView().getDrawInfo(row);
-
         if (!enabled || !selected)
         {
+            const FileView::PathDrawInfo pdi = getDataView().getDrawInfo(row);
+
             const wxColor backCol = [&]
             {
                 if (pdi.fsObj && !pdi.fsObj->isEmpty<side>()) //do we need color indication for *inactive* empty rows? probably not...
@@ -579,13 +583,6 @@ private:
         }
         else
             GridData::renderRowBackgound(dc, rect, row, true /*enabled*/, true /*selected*/, rowHover);
-
-        //----------------------------------------------------------------------------------
-        const wxRect rectLine(rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1));
-        clearArea(dc, rectLine, row == pdi.groupLastRow - 1 || //last group item
-                  (pdi.fsObj == pdi.folderGroupObj &&  //folder item => distinctive separation color against subsequent file items
-                   itemPathFormat_ != ItemPathFormat::name) ?
-                  getColorGridLine() : getDefaultBackgroundColorAlternating(pdi.groupIdx % 2 != 0));
     }
 
 
@@ -776,11 +773,11 @@ private:
                     {
                         const size_t compLen = i == pdi.groupLastRow - 1 && l == linesPerRow - 1 ? //not enough rows to show remaining parent folder components?
                                                groupParentFolder.size() - compPos : //=> append the rest: will be truncated with ellipsis
-                                               getPathTrimmedSize(dc, makeStringView(groupParentFolder.begin() + compPos, groupParentFolder.end()),
+                                               getPathTrimmedSize(dc, std::wstring_view(groupParentFolder.begin() + compPos, groupParentFolder.end()),
                                                                   groupParentWidth + (i == groupFirstRow ? 0 : groupNameWidth) - gapSize_ - arrowRightDownWidth);
 
                         if (i == groupFirstRow && !groupName.empty() && groupRowCount > 1 &&
-                            getTextExtentBuffered(dc, makeStringView(groupParentFolder.begin() + compPos, compLen)).x > groupParentWidth - gapSize_ - arrowRightDownWidth)
+                            getTextExtentBuffered(dc, std::wstring_view(groupParentFolder.c_str() + compPos, compLen)).x > groupParentWidth - gapSize_ - arrowRightDownWidth)
                         {
                             if (i == row && l != 0)
                                 groupParentPart.insert(groupParentPart.begin(), linesPerRow - l, L'\n'); //effectively: "align bottom" for first row
@@ -831,8 +828,14 @@ private:
         //don't forget: harmonize with getBestSize()!!!
         //-----------------------------------------------
 
-        if (const FileView::PathDrawInfo pdi = getDataView().getDrawInfo(row);
-            pdi.fsObj)
+        const FileView::PathDrawInfo pdi = getDataView().getDrawInfo(row);
+
+        const wxColor borderCol = row == pdi.groupLastRow - 1 || //last group item
+                                  (pdi.fsObj == pdi.folderGroupObj &&  //folder item => distinctive separation color against subsequent file items
+                                   itemPathFormat_ != ItemPathFormat::name) ?
+                                  getColorGridLine() : getDefaultBackgroundColorAlternating(pdi.groupIdx % 2 != 0);
+
+        if (pdi.fsObj)
         {
             //accessibility: always set both foreground AND background colors!
             wxDCTextColourChanger textColor(dc);
@@ -845,8 +848,6 @@ private:
                     case DisplayType::symlink:  textColor.Set(*wxBLACK); break;
                     case DisplayType::inactive: textColor.Set(getColorInactiveText()); break;
                 }
-
-            wxRect rectTmp = rect;
 
             switch (static_cast<ColumnTypeRim>(colType))
             {
@@ -907,13 +908,55 @@ private:
                         drawBitmapRtlNoMirror(dc, icon, rectIcon, wxALIGN_CENTER);
                     };
 
-                    auto drawFileIcon = [this, &drawIcon](const wxImage& fileIcon, bool drawAsLink, const wxRect& rectIcon, const FileSystemObject& fsObj)
+                    auto drawFileIcon = [this, &drawIcon, row](const wxRect& rectIcon, const FileSystemObject& fsObj)
                     {
+                        IconBuffer* iconBuf = getIconManager().getIconBuffer();
+
+                        /* whenever there's something new to render on screen, start up watching for failed icon drawing:
+                           => ideally it would suffice to start watching only when scrolling grid or showing new grid content, but this solution is more robust
+                           and the icon updater will stop automatically when finished anyway
+                           Note: it's not sufficient to start up on failed icon loads only, since we support prefetching of not yet visible rows!!! */
+                        if (iconBuf)
+                            getIconManager().startIconUpdater();
+
+                        wxImage fileIcon;
+                        if (!fsObj.isEmpty<side>())
+                        {
+                            if (/*bool isFolder = */ dynamic_cast<const FolderPair*>(&fsObj))
+                                fileIcon = getIconManager().getGenericDirIcon();
+                            else //file or symlink
+                                if (iconBuf)
+                                {
+                                    if (std::optional<wxImage> tmpIco = iconBuf->retrieveFileIcon(fsObj.template getAbstractPath<side>()))
+                                        fileIcon = *tmpIco;
+                                    else
+                                    {
+                                        setFailedLoad(row); //save status of failed icon load -> used for async. icon loading
+                                        //falsify only! avoid writing incorrect success status when only partially updating the DC, e.g. during scrolling,
+                                        //see repaint behavior of ::ScrollWindow() function!
+                                        fileIcon = iconBuf->getIconByExtension(fsObj.template getItemName<side>()); //better than nothing
+                                    }
+                                }
+                        }
+
                         if (fileIcon.IsOk())
+                        {
                             drawIcon(fileIcon, rectIcon, fsObj.isActive());
 
-                        if (drawAsLink)
-                            drawIcon(getIconManager().getLinkOverlayIcon(), rectIcon, fsObj.isActive());
+                            bool drawAsLink = false;
+                            visitFSObject(fsObj, [&](const FolderPair& folder)
+                            {
+                                drawAsLink = folder.isFollowedSymlink<side>();
+                            },
+                            [&](const FilePair& file)
+                            {
+                                drawAsLink = file.isFollowedSymlink<side>() || hasLinkExtension(file.getItemName<side>());
+                            },
+                            [&](const SymlinkPair& symlink) { drawAsLink = true; });
+
+                            if (drawAsLink)
+                                drawIcon(getIconManager().getLinkOverlayIcon(), rectIcon, fsObj.isActive());
+                        }
 
                         if (getViewType() == GridViewType::action)
                             if (const auto& [cudAction, cudSide] = getCudAction(fsObj.getSyncOperation());
@@ -921,17 +964,34 @@ private:
                                 switch (cudAction)
                                 {
                                     case CudAction::create:
-                                        assert(!fileIcon.IsOk() && !drawAsLink);
-                                        if (const bool isFolder = dynamic_cast<const FolderPair*>(&fsObj) != nullptr)
-                                            drawIcon(getIconManager().getGenericDirIcon().ConvertToGreyscale(1.0 / 3, 1.0 / 3, 1.0 / 3). //treat all channels equally!
-                                                     ConvertToDisabled(), rectIcon, true /*drawActive: [!]*/); //visual hint to distinguish file/folder creation
+                                        assert(!fileIcon.IsOk());
+                                        //give a faint visual hint about the yet to be created item
+                                        {
+                                            wxImage placeholderIcon = /*bool isFolder = */ dynamic_cast<const FolderPair*>(&fsObj) ?
+                                                                                           getIconManager().getGenericDirIcon() :
+                                                                                           (iconBuf ? iconBuf->getIconByExtension(fsObj.template getItemName<side>()) : getIconManager().getGenericFileIcon());
 
-                                        //too much clutter? => drawIcon(getIconManager().getPlusOverlayIcon(), rectIcon,
-                                        //                              true /*drawActive: [!] e.g. disabled folder, exists left only, where child item is copied*/);
+                                            drawIcon(placeholderIcon.ConvertToGreyscale(1.0 / 3, 1.0 / 3, 1.0 / 3). //treat all channels equally!
+                                                     ConvertToDisabled(), rectIcon, true /*drawActive: [!] e.g. disabled folder, exists left only, but child item is copied*/);
+
+                                            bool drawAsLink = false;
+                                            visitFSObject(fsObj, [&](const FolderPair& folder) {}, //newly created folder won't be a symlink
+                                            [&](const FilePair& file) //never a symlink, but might be a shell link
+                                            {
+                                                drawAsLink = hasLinkExtension(file.getItemName<side>());
+                                            },
+                                            [&](const SymlinkPair& symlink) { drawAsLink = true; });
+
+                                            if (drawAsLink)
+                                                drawIcon(getIconManager().getLinkOverlayIcon(), rectIcon, true /*drawActive: [!]*/);
+                                        }
+                                        //too much clutter? => drawIcon(getIconManager().getPlusOverlayIcon(), rectIcon, true /*drawActive: [!]*/);
                                         break;
+
                                     case CudAction::delete_:
                                         drawIcon(getIconManager().getMinusOverlayIcon(), rectIcon, true /*drawActive: [!]*/);
                                         break;
+
                                     case CudAction::noChange:
                                     case CudAction::update:
                                         break;
@@ -943,20 +1003,20 @@ private:
                                  groupName,
                                  itemName,
                                  groupParentWidth,
-                                 groupNameWidth] = getGroupRowLayout(dc, row, pdi, rectTmp.width);
+                                 groupNameWidth] = getGroupRowLayout(dc, row, pdi, rect.width);
 
                     wxRect rectGroup, rectGroupParent, rectGroupName;
-                    rectGroup = rectGroupParent = rectGroupName = rectTmp;
+                    rectGroup = rectGroupParent = rectGroupName = rect;
 
                     rectGroup      .width = groupParentWidth + groupNameWidth;
                     rectGroupParent.width = groupParentWidth;
                     rectGroupName  .width = groupNameWidth;
                     rectGroupName.x += groupParentWidth;
 
-                    rectTmp.x     += rectGroup.width;
-                    rectTmp.width -= rectGroup.width;
+                    wxRect rectGroupItems = rect;
+                    rectGroupItems.x     += rectGroup.width;
+                    rectGroupItems.width -= rectGroup.width;
 
-                    wxRect rectGroupItems = rectTmp;
 
                     if (itemName.empty()) //expand group name to include unused item area (e.g. bigger selection border)
                     {
@@ -973,9 +1033,6 @@ private:
                         {
                             wxRect rectGroupBack = rectGroup;
                             rectGroupBack.width += 2 * gapSize_; //include gap before vline
-
-                            if (row == pdi.groupLastRow - 1 /*last group item*/) //preserve the group separation line!
-                                rectGroupBack.height -= dipToWxsize(1);
 
                             clearArea(dc, rectGroupBack, getDefaultBackgroundColorAlternating(pdi.groupIdx % 2 == 0));
                             //clearArea() is surprisingly expensive => call just once!
@@ -1027,14 +1084,7 @@ private:
                             drawCudHighlight(rectGroupNameBack, pdi.folderGroupObj->getSyncOperation());
                             tryDrawNavMarker(rectGroupName);
 
-                            wxImage folderIcon;
-                            bool drawAsLink = false;
-                            if (!pdi.folderGroupObj->isEmpty<side>())
-                            {
-                                folderIcon = getIconManager().getGenericDirIcon();
-                                drawAsLink = pdi.folderGroupObj->isFollowedSymlink<side>();
-                            }
-                            drawFileIcon(folderIcon, drawAsLink, rectGroupName, *pdi.folderGroupObj);
+                            drawFileIcon(rectGroupName, *pdi.folderGroupObj);
                             rectGroupName.x     += gapSize_ + getIconManager().getIconWxsize() + gapSize_;
                             rectGroupName.width -= gapSize_ + getIconManager().getIconWxsize() + gapSize_;
 
@@ -1049,6 +1099,15 @@ private:
                     }
 
                     //-------------------------------------------------------------------------
+                    wxRect rectBorder = rect;
+                    if (rectGroup.width > 0 && row != pdi.groupLastRow - 1 /*!last group item*/)
+                    {
+                        rectBorder.x     += rectGroup.width + 2 * gapSize_;
+                        rectBorder.width -= rectGroup.width + 2 * gapSize_;
+                    }
+                    drawRectangleBorder(dc, rectBorder, borderCol, dipToWxsize(1), wxBOTTOM);
+                    //-------------------------------------------------------------------------
+
                     if (!itemName.empty())
                     {
                         //draw group/items separation line
@@ -1057,53 +1116,21 @@ private:
                             rectGroupItems.x     += 2 * gapSize_;
                             rectGroupItems.width -= 2 * gapSize_;
 
-                            wxRect rectLine = rectGroupItems;
-                            rectLine.width = dipToWxsize(1);
-                            clearArea(dc, rectLine, getColorGridLine());
+                            drawRectangleBorder(dc, rectGroupItems, getColorGridLine(), dipToWxsize(1), wxLEFT);
 
                             rectGroupItems.x     += dipToWxsize(1);
                             rectGroupItems.width -= dipToWxsize(1);
                         }
                         //-------------------------------------------------------------------------
-
                         wxRect rectItemsBack = rectGroupItems;
                         rectItemsBack.height -= dipToWxsize(1); //preserve item separation lines!
 
                         drawCudHighlight(rectItemsBack, pdi.fsObj->getSyncOperation());
                         tryDrawNavMarker(rectGroupItems);
 
-                        if (IconBuffer* iconBuf = getIconManager().getIconBuffer()) //=> draw file icons
+                        if (getIconManager().getIconBuffer()) //=> also indicates whether to draw file icons or not
                         {
-                            /* whenever there's something new to render on screen, start up watching for failed icon drawing:
-                               => ideally it would suffice to start watching only when scrolling grid or showing new grid content, but this solution is more robust
-                               and the icon updater will stop automatically when finished anyway
-                               Note: it's not sufficient to start up on failed icon loads only, since we support prefetching of not yet visible rows!!! */
-                            getIconManager().startIconUpdater();
-
-                            wxImage fileIcon;
-                            const IconInfo ii = getIconInfo(*pdi.fsObj);
-                            switch (ii.type)
-                            {
-                                case IconType::folder:
-                                    fileIcon = getIconManager().getGenericDirIcon();
-                                    break;
-
-                                case IconType::standard:
-                                    if (std::optional<wxImage> tmpIco = iconBuf->retrieveFileIcon(pdi.fsObj->template getAbstractPath<side>()))
-                                        fileIcon = *tmpIco;
-                                    else
-                                    {
-                                        setFailedLoad(row); //save status of failed icon load -> used for async. icon loading
-                                        //falsify only! avoid writing incorrect success status when only partially updating the DC, e.g. during scrolling,
-                                        //see repaint behavior of ::ScrollWindow() function!
-                                        fileIcon = iconBuf->getIconByExtension(pdi.fsObj->template getItemName<side>()); //better than nothing
-                                    }
-                                    break;
-
-                                case IconType::none:
-                                    break;
-                            }
-                            drawFileIcon(fileIcon, ii.drawAsLink, rectGroupItems, *pdi.fsObj);
+                            drawFileIcon(rectGroupItems, *pdi.fsObj);
                             rectGroupItems.x     += gapSize_ + getIconManager().getIconWxsize();
                             rectGroupItems.width -= gapSize_ + getIconManager().getIconWxsize();
                         }
@@ -1128,6 +1155,10 @@ private:
                 case ColumnTypeRim::date:
                 case ColumnTypeRim::extension:
                 {
+                    drawRectangleBorder(dc, rect, borderCol, dipToWxsize(1), wxBOTTOM);
+
+                    wxRect rectTmp = rect;
+
                     if (refGrid().GetLayoutDirection() == wxLayout_RightToLeft || //remain left-justified for RTL languages
                         static_cast<ColumnTypeRim>(colType) == ColumnTypeRim::extension)
                     {
@@ -1293,43 +1324,6 @@ private:
         return toolTip;
     }
 
-
-    enum class IconType
-    {
-        none,
-        folder,
-        standard,
-    };
-    struct IconInfo
-    {
-        IconType type = IconType::none;
-        bool drawAsLink = false;
-    };
-    static IconInfo getIconInfo(const FileSystemObject& fsObj)
-    {
-        IconInfo out;
-
-        if (!fsObj.isEmpty<side>())
-            visitFSObject(fsObj, [&](const FolderPair& folder)
-        {
-            out.type       = IconType::folder;
-            out.drawAsLink = folder.isFollowedSymlink<side>();
-        },
-
-        [&](const FilePair& file)
-        {
-            out.type       = IconType::standard;
-            out.drawAsLink = file.isFollowedSymlink<side>() || hasLinkExtension(file.getItemName<side>());
-        },
-
-        [&](const SymlinkPair& symlink)
-        {
-            out.type       = IconType::standard;
-            out.drawAsLink = true;
-        });
-        return out;
-    }
-
     const int gapSize_     = dipToWxsize(FILE_GRID_GAP_SIZE_DIP);
     const int gapSizeWide_ = dipToWxsize(FILE_GRID_GAP_SIZE_WIDE_DIP);
 
@@ -1487,9 +1481,8 @@ private:
             GridData::renderRowBackgound(dc, rect, row, true /*enabled*/, true /*selected*/, rowHover);
 
         //----------------------------------------------------------------------------------
-        const wxRect rectLine(rect.x, rect.y + rect.height - dipToWxsize(1), rect.width, dipToWxsize(1));
-        clearArea(dc, rectLine, row == pdi.groupLastRow - 1 /*last group item*/ ?
-                  getColorGridLine() : getDefaultBackgroundColorAlternating(pdi.groupIdx % 2 != 0));
+        drawRectangleBorder(dc, rect, row == pdi.groupLastRow - 1 /*last group item*/ ?
+                            getColorGridLine() : getDefaultBackgroundColorAlternating(pdi.groupIdx % 2 != 0), dipToWxsize(1), wxBOTTOM);
     }
 
     enum class HoverAreaCenter //each cell can be divided into four blocks concerning mouse selections

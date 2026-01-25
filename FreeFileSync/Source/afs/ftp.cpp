@@ -209,7 +209,7 @@ public:
         if (!std::all_of(it_, rngEnd, acceptChar))
             throw SysError(L"Expected char type not found.");
 
-        return makeStringView(std::exchange(it_, rngEnd), rngEnd);
+        return {std::exchange(it_, rngEnd), rngEnd};
     }
 
     template <class Function> //expects non-empty range!
@@ -219,7 +219,7 @@ public:
         if (rngEnd == it_)
             throw SysError(L"Expected char range not found.");
 
-        return makeStringView(std::exchange(it_, rngEnd), rngEnd);
+        return {std::exchange(it_, rngEnd), rngEnd};
     }
 
     char peekNextChar() const { return it_ == itEnd_ ? '\0' : *it_; }
@@ -1192,7 +1192,7 @@ FtpItem getFtpSymlinkInfo(const FtpLogin& login, const AfsPath& linkPath) //thro
                     if (isDigit(line.back())) //https://tools.ietf.org/html/rfc3659#section-4
                     {
                         auto it = std::find_if(line.rbegin(), line.rend(), [](const char c) { return !isDigit(c); });
-                        output.fileSize = stringTo<uint64_t>(makeStringView(it.base(), line.end()));
+                        output.fileSize = stringTo<uint64_t>(std::string_view(it.base(), line.end()));
 
                         mdtmBuf = session.runSingleFtpCommand("MDTM " + session.getServerPathInternal(linkPath),
                                                               true /*requestUtf8*/); //throw SysError, SysErrorFtpProtocol
@@ -1219,7 +1219,7 @@ FtpItem getFtpSymlinkInfo(const FtpLogin& login, const AfsPath& linkPath) //thro
                     const auto itStart = line.begin() + 4;
                     const auto itEnd = std::find(itStart, line.end(), '.');
 
-                    if (const TimeComp tc = parseTime("%Y%m%d%H%M%S", makeStringView(itStart, itEnd));
+                    if (const TimeComp tc = parseTime("%Y%m%d%H%M%S", std::string_view(itStart, itEnd));
                         tc != TimeComp())
                         if (const auto [modTime, timeValid] = utcToTimeT(tc);
                             timeValid)
@@ -1332,8 +1332,8 @@ private:
             if (itBlank == rawLine.end())
                 throw SysError(L"Item name not available.");
 
-            const std::string_view facts = makeStringView(itBegin, itBlank);
-            item.itemName = session.serverToUtfEncoding(makeStringView(itBlank + 1, rawLine.end())); //throw SysError
+            const std::string_view facts(itBegin, itBlank);
+            item.itemName = session.serverToUtfEncoding(std::string_view(itBlank + 1, rawLine.end())); //throw SysError
 
             std::string_view typeFact;
             std::string_view fileSize;
@@ -1442,7 +1442,7 @@ private:
 
         std::for_each(it, lines.end(), [&](const std::string_view line)
         {
-            auto& ownerGroupCount = [&]() -> std::optional<int>&
+            auto& ownerGroupCount = [&] -> std::optional<int>&
             {
                 assert(!line.empty()); //see splitFtpResponse()
                 switch (line[0])
@@ -1817,7 +1817,7 @@ private:
 
                 case AFS::ItemType::folder:
                     if (std::shared_ptr<AFS::TraverserCallback> cbSub = cb.onFolder({item.itemName, false /*isFollowedSymlink*/})) //throw X
-                        workload_.push_back({itemPath, std::move(cbSub)});
+                        workload_.emplace_back(itemPath, std::move(cbSub));
                     break;
 
                 case AFS::ItemType::symlink:
@@ -1835,7 +1835,7 @@ private:
                             if (target.type == AFS::ItemType::folder)
                             {
                                 if (std::shared_ptr<AFS::TraverserCallback> cbSub = cb.onFolder({item.itemName, true /*isFollowedSymlink*/})) //throw X
-                                    workload_.push_back({itemPath, std::move(cbSub)});
+                                    workload_.emplace_back(itemPath, std::move(cbSub));
                             }
                             else //a file or named pipe, etc.
                                 cb.onFile({item.itemName, target.fileSize, target.modTime, item.filePrint, true /*isFollowedSymlink*/}); //throw X
@@ -1988,7 +1988,7 @@ struct InputStreamFtp : public AFS::InputStream
 {
     InputStreamFtp(const FtpLogin& login, const AfsPath& filePath)
     {
-        worker_ = InterruptibleThread([asyncStreamOut = this->asyncStreamIn_, login, filePath]
+        worker_ = InterruptibleThread([asyncStreamOut = asyncStreamIn_, login, filePath]
         {
             setCurrentThreadName(Zstr("Istream ") + utfTo<Zstring>(getCurlDisplayPath(login, filePath)));
             try
@@ -2057,8 +2057,8 @@ struct OutputStreamFtp : public AFS::OutputStreamImpl
         futUploadDone_ = promUploadDone.get_future();
 
         worker_ = InterruptibleThread([login, filePath,
-                                       asyncStreamIn = this->asyncStreamOut_,
-                                       pUploadDone   = std::move(promUploadDone)]() mutable
+                                       asyncStreamIn = asyncStreamOut_,
+                                       pUploadDone   = std::move(promUploadDone)] mutable
         {
             setCurrentThreadName(Zstr("Ostream ") + utfTo<Zstring>(getCurlDisplayPath(login, filePath)));
             try
@@ -2439,7 +2439,7 @@ private:
 
     //symlink handling: follow
     //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
-    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& attrSource, //throw FileError, (ErrorFileLocked), X
+    FileCopyResult copyFileForSameAfsType(const AfsPath& sourcePath, const StreamAttributes& sourceAttr, //throw FileError, (ErrorFileLocked), X
                                           const AbstractPath& targetPath, bool copyFilePermissions, const IoCallback& notifyUnbufferedIO /*throw X*/) const override
     {
         //no native FTP file copy => use stream-based file copy:
@@ -2447,7 +2447,7 @@ private:
             throw FileError(replaceCpy(_("Cannot write permissions of %x."), L"%x", fmtPath(AFS::getDisplayPath(targetPath))), _("Operation not supported by device."));
 
         //already existing: undefined behavior! (e.g. fail/overwrite/auto-rename)
-        return copyFileAsStream(sourcePath, attrSource, targetPath, notifyUnbufferedIO); //throw FileError, (ErrorFileLocked), X
+        return copyFileAsStream(sourcePath, sourceAttr, targetPath, notifyUnbufferedIO); //throw FileError, (ErrorFileLocked), X
     }
 
     //symlink handling: follow
@@ -2721,7 +2721,7 @@ AbstractPath fff::createItemPathFtp(const Zstring& itemPathPhrase) //noexcept
     const ZstringView options  =  afterFirst(fullPathOpt, Zstr('|'), IfNotFoundReturn::none);
 
     auto it = std::find_if(fullPath.begin(), fullPath.end(), [](Zchar c) { return c == '/' || c == '\\'; });
-    const ZstringView serverPort = makeStringView(fullPath.begin(), it);
+    const ZstringView serverPort(fullPath.begin(), it);
     const AfsPath serverRelPath = sanitizeDeviceRelativePath({it, fullPath.end()});
 
     if (std::optional<std::pair<Zstring, int /*optional: port*/>> ip6AndPort = parseIpv6Address(serverPort)) //e.g. 2001:db8::ff00:42:8329 or [::1]:80

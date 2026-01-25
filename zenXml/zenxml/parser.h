@@ -348,7 +348,7 @@ public:
 
         if (itNameEnd != pos_)
         {
-            const std::string_view name = makeStringView(pos_, itNameEnd);
+            const std::string_view name(pos_, itNameEnd);
             pos_ = itNameEnd;
             return denormalize(name);
         }
@@ -364,7 +364,7 @@ public:
             return c == '<'  ||
                    c == '>';
         });
-        const std::string_view output = makeStringView(pos_, it);
+        const std::string_view output(pos_, it);
         pos_ = it;
         return denormalize(output);
     }
@@ -378,7 +378,7 @@ public:
                    c == '\'' ||
                    c == '"';
         });
-        const std::string_view output = makeStringView(pos_, it);
+        const std::string_view output(pos_, it);
         pos_ = it;
         return denormalize(output);
     }
@@ -409,7 +409,7 @@ private:
 
     bool startsWith(const std::string& prefix) const
     {
-        return zen::startsWith(makeStringView(pos_, stream_.end()), prefix);
+        return zen::startsWith(std::string_view(pos_, stream_.end()), prefix);
     }
 
     using TokenList = std::vector<std::pair<std::string, Token::Type>>;

@@ -510,7 +510,7 @@ private:
         {
             const uint64_t folderPathHash = getPathHash(subFolder, parentPathHash);
 
-            childPathRefs_.push_back({&subFolder, folderPathHash});
+            childPathRefs_.emplace_back(&subFolder, folderPathHash);
 
             recurse(subFolder, folderPathHash);
         }
@@ -742,7 +742,7 @@ void removeFolderIfExistsRecursion(const AbstractPath& folderPath, //throw FileE
 
 
 inline
-AFS::FileCopyResult copyFileTransactional(const AbstractPath& sourcePath, const AFS::StreamAttributes& attrSource, //throw FileError, ErrorFileLocked, X
+AFS::FileCopyResult copyFileTransactional(const AbstractPath& sourcePath, const AFS::StreamAttributes& sourceAttr, //throw FileError, ErrorFileLocked, X
                                           const AbstractPath& targetPath,
                                           bool copyFilePermissions,
                                           bool transactionalCopy,
@@ -752,7 +752,7 @@ AFS::FileCopyResult copyFileTransactional(const AbstractPath& sourcePath, const 
 {
     return parallelScope([=]
     {
-        return AFS::copyFileTransactional(sourcePath, attrSource, targetPath, copyFilePermissions, transactionalCopy, onDeleteTargetFile, notifyUnbufferedIO); //throw FileError, ErrorFileLocked, X
+        return AFS::copyFileTransactional(sourcePath, sourceAttr, targetPath, copyFilePermissions, transactionalCopy, onDeleteTargetFile, notifyUnbufferedIO); //throw FileError, ErrorFileLocked, X
     }, singleThread);
 }
 
@@ -1504,7 +1504,7 @@ void FolderPairSyncer::executeFileMoveImpl(FilePair& fileFrom, FilePair& fileTo)
 
     if (fallBackCopyDelete)
     {
-        auto getStats = [&]() -> std::pair<int, int64_t>
+        auto getStats = [&] -> std::pair<int, int64_t>
         {
             SyncStatistics statSrc(fileFrom);
             SyncStatistics statTrg(fileTo);

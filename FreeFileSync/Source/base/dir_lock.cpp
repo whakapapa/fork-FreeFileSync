@@ -27,9 +27,9 @@ using namespace fff;
 
 namespace
 {
-constexpr std::chrono::seconds EMIT_LIFE_SIGN_INTERVAL   (5); //show life sign;
-constexpr std::chrono::seconds POLL_LIFE_SIGN_INTERVAL   (4); //poll for life sign;
-constexpr std::chrono::seconds DETECT_ABANDONED_INTERVAL(30); //assume abandoned lock;
+constexpr std::chrono::seconds EMIT_LIFE_SIGN_INTERVAL(5); //show life sign
+constexpr std::chrono::seconds POLL_LIFE_SIGN_INTERVAL(2); //poll for life sign
+constexpr std::chrono::seconds DETECT_ABANDONED_INTERVAL = EMIT_LIFE_SIGN_INTERVAL + std::chrono::seconds(7); //assume abandoned lock
 
 const char LOCK_FILE_DESCR[] = "FreeFileSync";
 const int LOCK_FILE_VERSION = 3; //2020-02-07
@@ -165,8 +165,8 @@ LockInformation getLockInfoFromCurrentProcess() //throw FileError
 
     const std::string osName = "Linux";
 
-    //wxGetFullHostName() is a performance killer and can hang for some users, so don't touch!
-    std::vector<char> buf(10000);
+    //wxGetFullHostName()? kills performance and can hang for some users, so don't touch!
+    std::vector<char> buf(1024);
     if (::gethostname(buf.data(), buf.size()) != 0)
         THROW_LAST_FILE_ERROR(_("Cannot get process information."), "gethostname");
     lockInfo.computerName = osName + ' ' + buf.data() + '.';
@@ -227,7 +227,7 @@ LockInformation unserialize(const std::string& byteStream) //throw SysError
     if (posEnd == std::string::npos)
         throw SysErrorUnexpectedEos();
 
-    const std::string_view byteStreamTrm = makeStringView(byteStream.begin(), posEnd);
+    const std::string_view byteStreamTrm(byteStream.c_str(), posEnd);
 
     MemoryStreamOut crcStreamOut;
     writeNumber<uint32_t>(crcStreamOut, getCrc32(byteStreamTrm.begin(), byteStreamTrm.end() - sizeof(uint32_t)));
@@ -236,13 +236,14 @@ LockInformation unserialize(const std::string& byteStream) //throw SysError
         throw SysError(_("File content is corrupted.") + L" (invalid checksum)");
     //--------------------------------------------------------------------
 
-    LockInformation lockInfo = {};
-    lockInfo.lockId       = readContainer<std::string>(streamIn); //
-    lockInfo.computerName = readContainer<std::string>(streamIn); //SysErrorUnexpectedEos
-    lockInfo.userId       = readContainer<std::string>(streamIn); //
-    lockInfo.sessionId    = static_cast<SessionId>(readNumber<uint64_t>(streamIn)); //[!] conversion
-    lockInfo.processId    = static_cast<ProcessId>(readNumber<uint64_t>(streamIn)); //[!] conversion
-    return lockInfo;
+    return //designated initializers guarantee sequential evaluation:
+    {
+        .lockId       = readContainer<std::string>(streamIn), //
+        .computerName = readContainer<std::string>(streamIn), //SysErrorUnexpectedEos
+        .userId       = readContainer<std::string>(streamIn), //
+        .sessionId    = static_cast<SessionId>(readNumber<uint64_t>(streamIn)), //[!] conversion
+        .processId    = static_cast<ProcessId>(readNumber<uint64_t>(streamIn)), //[!] conversion
+    };
 }
 
 
@@ -390,7 +391,9 @@ void waitOnDirLock(const Zstring& lockFilePath, const DirLockCallback& notifySta
         }
 
         //wait some time...
-        const auto delayUntil = std::chrono::steady_clock::now() + POLL_LIFE_SIGN_INTERVAL;
+        const auto delayUntil = std::min(std::chrono::steady_clock::now() + POLL_LIFE_SIGN_INTERVAL,
+                                         lastLifeSign + DETECT_ABANDONED_INTERVAL);
+
         for (auto now = std::chrono::steady_clock::now(); now < delayUntil; now = std::chrono::steady_clock::now())
         {
             if (notifyStatus)
@@ -398,11 +401,11 @@ void waitOnDirLock(const Zstring& lockFilePath, const DirLockCallback& notifySta
                 //one signal missed: it's likely this is an abandoned lock => show countdown
                 if (lastCheckTime >= lastLifeSign + EMIT_LIFE_SIGN_INTERVAL + std::chrono::seconds(1))
                 {
-                    const int remainingSeconds = std::max(0, static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(DETECT_ABANDONED_INTERVAL - (now - lastLifeSign)).count()));
+                    const int remainingSeconds = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(DETECT_ABANDONED_INTERVAL - (now - lastLifeSign)).count());
                     notifyStatus(infoMsg + SPACED_DASH + _("Lock file apparently abandoned...") + L' ' + _P("1 sec", "%x sec", remainingSeconds)); //throw X
                 }
-                else
-                    notifyStatus(std::wstring(infoMsg)); //throw X; emit a message in any case (might clear other one)
+                else //emit a message in any case (might clear other one)
+                    notifyStatus(std::wstring(infoMsg)); //throw X
             }
             std::this_thread::sleep_for(cbInterval);
         }

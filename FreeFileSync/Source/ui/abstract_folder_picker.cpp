@@ -127,10 +127,9 @@ AbstractFolderPickerDlg::AbstractFolderPickerDlg(wxWindow* parent, AbstractPath&
 
     //----------------------------------------------------------------------
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
-#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-#endif
+
     Center(); //apply *after* dialog size change!
 
     Bind(wxEVT_CHAR_HOOK,            [this](wxKeyEvent&  event) { onLocalKeyEvent(event); }); //dialog-specific local key events
@@ -270,7 +269,7 @@ void AbstractFolderPickerDlg::findAndNavigateToExistingPath(const AbstractPath& 
 
     m_staticTextStatus->SetLabelText(_("Scanning...") + L' ' + utfTo<std::wstring>(FILE_NAME_SEPARATOR + folderPath.afsPath.value)); //keep it short!
 
-    guiQueue_.processAsync([folderPath]() -> std::optional<AFS::ItemType>
+    guiQueue_.processAsync([folderPath] -> std::optional<AFS::ItemType>
     {
         try
         {

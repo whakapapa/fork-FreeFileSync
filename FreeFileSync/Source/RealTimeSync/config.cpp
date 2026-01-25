@@ -161,7 +161,7 @@ std::pair<FfsRealConfig, std::wstring /*warningMsg*/> rts::readRealOrBatchConfig
         std::erase_if(uniqueFolders, [](const Zstring& str) { return trimCpy(str).empty(); });
 
         std::wstring warningMsg;
-        const Zstring ffsLaunchPath = [&]() -> Zstring
+        const Zstring ffsLaunchPath = [&] -> Zstring
         {
             try
             {

@@ -20,7 +20,7 @@ double zen::fromChars(const char* first, const char* last)
 }
 
 
-const char* zen::toChars(char* first, char* last, double num)
+char* zen::toChars(char* first, char* last, double num)
 {
     const std::to_chars_result rv = std::to_chars(first, last, num);
     return rv.ec == std::errc{} ? rv.ptr : first;

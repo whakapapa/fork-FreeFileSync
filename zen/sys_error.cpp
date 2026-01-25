@@ -165,7 +165,7 @@ std::wstring zen::formatGlibError(const std::string& functionName, GError* error
 
     std::wstring errorCode;
     if (error->domain == G_IO_ERROR)
-        errorCode = [&]() -> std::wstring
+        errorCode = [&] -> std::wstring
     {
         switch (error->code) //GIOErrorEnum: https://gitlab.gnome.org/GNOME/glib/-/blob/master/gio/gioenums.h#L530
         {

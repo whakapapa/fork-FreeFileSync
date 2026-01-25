@@ -26,9 +26,8 @@ using namespace rts;
 
 using fff::FfsExitCode;
 
-#ifdef __WXGTK3__ //deprioritize Wayland: see FFS' application.cpp
+
     GLOBAL_RUN_ONCE(::gdk_set_allowed_backends("x11,*")); //call *before* gtk_init()
-#endif
 
 IMPLEMENT_APP(Application)
 
@@ -73,14 +72,6 @@ bool Application::OnInit()
     try { imageResourcesInit(appendPath(fff::getResourceDirPath(), Zstr("Icons.zip"))); }
     catch (const FileError& e) { logExtraError(e.toString()); } //not critical in this context
 
-    //GTK should already have been initialized by wxWidgets (see \src\gtk\app.cpp:wxApp::Initialize)
-#if GTK_MAJOR_VERSION == 2
-    ::gtk_rc_parse(appendPath(fff::getResourceDirPath(), "Gtk2Styles.rc").c_str());
-
-    //fix hang on Ubuntu 19.10 (see FFS's application.cpp)
-    [[maybe_unused]] GVfs* defaultFs = ::g_vfs_get_default(); //not owned by us!
-
-#elif GTK_MAJOR_VERSION == 3
     auto loadCSS = [&](const char* fileName)
     {
         GtkCssProvider* provider = ::gtk_css_provider_new();
@@ -112,9 +103,6 @@ bool Application::OnInit()
         }
         catch (const SysError& e3) { logExtraError(_("Failed to update the color theme.") + L"\n\n" + e3.toString()); }
     }
-#else
-#error unknown GTK version!
-#endif
 
     /* we're a GUI app: ignore SIGHUP when the parent terminal quits! (or process is killed!)
             => the FFS launcher will still be killed => fine

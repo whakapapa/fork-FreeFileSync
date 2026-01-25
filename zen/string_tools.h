@@ -28,7 +28,8 @@ template <class Char> Char asciiToLower(Char c);
 template <class Char> Char asciiToUpper(Char c);
 
 //both S and T can be strings or char/wchar_t arrays or single char/wchar_t
-template <class S, class T, typename = std::enable_if_t<isStringLike<S>/*Astyle hates tripe >*/ >> bool contains(const S& str, const T& term);
+template <class S, class T, typename = std::enable_if_t<isStringLike<S>/*Astyle hates triple >*/ >> bool contains(const S& str, const T& term);
+//containsAsciiNoCase? => too wasteful, prefer contains(getAsciiUpperCase(str), getAsciiUpperCase(term))
 
 template <class S, class T> bool startsWith           (const S& str, const T& prefix);
 template <class S, class T> bool startsWithAsciiNoCase(const S& str, const T& prefix);
@@ -87,6 +88,9 @@ template <class S, class T, class U>            void replace   (S& str, const T&
 
 template <class S, class T, class U> [[nodiscard]] S replaceCpyAsciiNoCase(S  str, const T& oldTerm, const U& newTerm);
 template <class S, class T, class U>            void replaceAsciiNoCase   (S& str, const T& oldTerm, const U& newTerm);
+
+template <class S> [[nodiscard]] S getAsciiUpperCase(S str);
+template <class S> [[nodiscard]] S getAsciiLowerCase(S str);
 
 //high-performance conversion between numbers and strings
 template <class S,   class Num> S   numberTo(const Num& number);
@@ -415,7 +419,7 @@ void split2(const S& str, Function1 isDelimiter, Function2 onStringPart)
     for (;;)
     {
         const auto* const blockLast = std::find_if(blockFirst, strEnd, isDelimiter);
-        onStringPart(makeStringView(blockFirst, blockLast));
+        onStringPart(std::basic_string_view<GetCharTypeT<S>>(blockFirst, blockLast));
 
         if (blockLast == strEnd)
             return;
@@ -538,6 +542,26 @@ template <class S, class T, class U> inline
 S replaceCpyAsciiNoCase(S str, const T& oldTerm, const U& newTerm)
 {
     replaceAsciiNoCase(str, oldTerm, newTerm);
+    return str;
+}
+
+
+template <class S> inline
+S getAsciiUpperCase(S str)
+{
+    using CharType = GetCharTypeT<S>;
+    for (CharType& c : str)  //identical to LCMapStringEx(), g_unichar_toupper(), CFStringUppercase() [verified!]
+        c = asciiToUpper(c); //
+    return str;
+}
+
+
+template <class S> inline
+S getAsciiLowerCase(S str)
+{
+    using CharType = GetCharTypeT<S>;
+    for (CharType& c : str)
+        c = asciiToLower(c);
     return str;
 }
 
@@ -665,10 +689,10 @@ enum class NumberType
 };
 
 
-template <class S, class Num> S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::other>) = delete;
+template <class S, class Num> S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::other>) = delete;
 #if 0 //default number to string conversion using streams: convenient, but SLOW, SLOW, SLOW!!!! (~ factor of 20)
 template <class S, class Num> inline
-S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::other>)
+S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::other>)
 {
     std::basic_ostringstream<GetCharTypeT<S>> ss;
     ss << number;
@@ -678,17 +702,17 @@ S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::oth
 
 
 template <class S, class Num> inline
-S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::floatingPoint>)
+S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::floatingPoint>)
 {
     //don't use sprintf("%g"): way SLOWWWWWWER than std::to_chars()
 
     char buffer[128]; //zero-initialize?
     //let's give some leeway, but 24 chars should suffice: https://www.reddit.com/r/cpp/comments/dgj89g/cppcon_2019_stephan_t_lavavej_floatingpoint/f3j7d3q/
-    const char* strEnd = toChars(std::begin(buffer), std::end(buffer), number);
+    char* strEnd = toChars(std::begin(buffer), std::end(buffer), number);
 
     S output;
 
-    for (const char c : makeStringView(static_cast<const char*>(buffer), strEnd))
+    for (const char c : std::string_view(buffer, strEnd))
         output += static_cast<GetCharTypeT<S>>(c);
 
     return output;
@@ -734,7 +758,7 @@ void formatPositiveInteger(Num n, OutputIterator& it)
 
 
 template <class S, class Num> inline
-S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::signedInt>)
+S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::signedInt>)
 {
     GetCharTypeT<S> buffer[2 + sizeof(Num) * 241 / 100]; //zero-initialize?
     //it's generally faster to use a buffer than to rely on String::operator+=() (in)efficiency
@@ -754,7 +778,7 @@ S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::sig
 
 
 template <class S, class Num> inline
-S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::unsignedInt>)
+S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::unsignedInt>)
 {
     GetCharTypeT<S> buffer[1 + sizeof(Num) * 241 / 100]; //zero-initialize?
     //required chars: ceil(ln_10(256^sizeof(n))) =~ ceil(sizeof(n) * 2.4082) <= 1 + floor(sizeof(n) * 2.41)
@@ -768,10 +792,10 @@ S numberTo(const Num& number, std::integral_constant<NumberType, NumberType::uns
 
 //--------------------------------------------------------------------------------
 
-template <class Num, class S> Num stringTo(const S& str, std::integral_constant<NumberType, NumberType::other>) = delete;
+template <class Num, class S> Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::other>) = delete;
 #if 0 //default string to number conversion using streams: convenient, but SLOW
 template <class Num, class S> inline
-Num stringTo(const S& str, std::integral_constant<NumberType, NumberType::other>)
+Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::other>)
 {
     using CharType = GetCharTypeT<S>;
     Num number = 0;
@@ -794,7 +818,7 @@ double stringToFloat(const wchar_t* first, const wchar_t* last)
 {
     std::string buf; //let's rely on SSO
 
-    for (const wchar_t c : makeStringView(first, last))
+    for (const wchar_t c : std::wstring_view(first, last))
         buf += static_cast<char>(c);
 
     return fromChars(buf.c_str(), buf.c_str() + buf.size());
@@ -802,7 +826,7 @@ double stringToFloat(const wchar_t* first, const wchar_t* last)
 
 
 template <class Num, class S> inline
-Num stringTo(const S& str, std::integral_constant<NumberType, NumberType::floatingPoint>)
+Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::floatingPoint>)
 {
     const auto* const first = strBegin(str);
     const auto* const last  = first + strLength(str);
@@ -835,7 +859,7 @@ Num extractInteger(const S& str, bool& hasMinusSign) //very fast conversion to i
 
     Num number = 0;
 
-    for (const CharType c : makeStringView(first, last))
+    for (const CharType c : std::basic_string_view<CharType>(first, last))
         if (static_cast<CharType>('0') <= c && c <= static_cast<CharType>('9'))
         {
             number *= 10;
@@ -849,7 +873,7 @@ Num extractInteger(const S& str, bool& hasMinusSign) //very fast conversion to i
 
 
 template <class Num, class S> inline
-Num stringTo(const S& str, std::integral_constant<NumberType, NumberType::signedInt>)
+Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::signedInt>)
 {
     bool hasMinusSign = false; //handle minus sign
     const Num number = extractInteger<Num>(str, hasMinusSign);
@@ -858,7 +882,7 @@ Num stringTo(const S& str, std::integral_constant<NumberType, NumberType::signed
 
 
 template <class Num, class S> inline
-Num stringTo(const S& str, std::integral_constant<NumberType, NumberType::unsignedInt>) //very fast conversion to integers: slightly faster than std::atoi, but more importantly: generic
+Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::unsignedInt>) //very fast conversion to integers: slightly faster than std::atoi, but more importantly: generic
 {
     bool hasMinusSign = false; //handle minus sign
     const Num number = extractInteger<Num>(str, hasMinusSign);
@@ -881,7 +905,7 @@ S numberTo(const Num& number)
           isFloat      <Num> ? impl::NumberType::floatingPoint :
           impl::NumberType::other>;
 
-    return impl::numberTo<S>(number, TypeTag());
+    return impl::numberTo2<S>(number, TypeTag());
 }
 
 
@@ -894,7 +918,7 @@ Num stringTo(const S& str)
           isFloat      <Num> ? impl::NumberType::floatingPoint :
           impl::NumberType::other>;
 
-    return impl::stringTo<Num>(str, TypeTag());
+    return impl::stringTo2<Num>(str, TypeTag());
 }
 
 

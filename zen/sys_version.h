@@ -12,7 +12,7 @@
 
 namespace zen
 {
-struct OsVersion //keep it a POD, so that the global version constants can be used during static initialization
+struct OsVersion
 {
     int major = 0;
     int minor = 0;
@@ -20,18 +20,21 @@ struct OsVersion //keep it a POD, so that the global version constants can be us
     std::strong_ordering operator<=>(const OsVersion&) const = default;
 };
 
-
 struct OsVersionDetail
 {
     OsVersion version;
     std::wstring osVersionRaw;
     std::wstring osName;
 };
-OsVersionDetail getOsVersionDetail(); //throw SysError
 
-OsVersion getOsVersion();
+OsVersionDetail getOsVersion();
 
 
+
+namespace impl
+{
+OsVersionDetail getOsVersionRaw(); //throw SysError
+}
 }
 
 #endif //SYS_VER_H_238470348254325

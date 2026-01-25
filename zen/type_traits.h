@@ -49,6 +49,7 @@ constexpr uint32_t arrayHash(T (&arr)[N]) //don't bother making FNV1aHash conste
     return hashVal;
 }
 
+
 //Herb Sutter's signedness conversion helpers: https://herbsutter.com/2013/06/13/gotw-93-solution-auto-variables-part-2/
 template <class T> inline auto makeSigned  (T t) { return static_cast<std::make_signed_t  <T>>(t); }
 template <class T> inline auto makeUnsigned(T t) { return static_cast<std::make_unsigned_t<T>>(t); }

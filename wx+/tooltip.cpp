@@ -81,10 +81,9 @@ void Tooltip::show(const wxString& text, wxPoint mousePos, const wxImage* img)
     if (imgChanged || txtChanged)
         //tipWindow_->Dimensions(); -> apparently not needed!?
         tipWindow_->GetSizer()->SetSizeHints(tipWindow_); //~=Fit() + SetMinSize()
-#ifdef __WXGTK3__
+
     //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //=> call wxWindow::Show() to "execute"
-#endif
 
     const wxPoint newPos = mousePos + wxPoint(wxTheApp->GetLayoutDirection() == wxLayout_RightToLeft ?
                                               - dipToWxsize(TIP_WINDOW_OFFSET_DIP) - tipWindow_->GetSize().GetWidth() :
@@ -104,17 +103,5 @@ void Tooltip::show(const wxString& text, wxPoint mousePos, const wxImage* img)
 void Tooltip::hide()
 {
     if (tipWindow_)
-    {
-#if GTK_MAJOR_VERSION == 2 //the tooltip sometimes turns blank or is not shown again after it was hidden: e.g. drag-selection on middle grid
-        //=> no such issues on GTK3!
-        tipWindow_->Destroy(); //apply brute force:
-        tipWindow_ = nullptr;  //
-        lastUsedImg_ = wxNullImage;
-
-#elif GTK_MAJOR_VERSION == 3
         tipWindow_->Hide();
-#else
-#error unknown GTK version!
-#endif
-    }
 }

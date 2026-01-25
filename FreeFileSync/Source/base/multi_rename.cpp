@@ -129,8 +129,8 @@ struct fff::RenameBuf
         for (const std::wstring& fileName : strings)
         {
             auto it = findLast(fileName.begin(), fileName.end(), L'.');
-            names.     push_back(makeStringView(fileName.begin(), it));
-            extensions.push_back(makeStringView(it, fileName.end()));
+            names.     emplace_back(fileName.begin(), it);
+            extensions.emplace_back(it, fileName.end());
         }
 
         parts       = getStringParts(std::move(names));
