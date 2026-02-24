@@ -375,7 +375,7 @@ StatusHandlerFloatingDialog::StatusHandlerFloatingDialog(wxFrame* parentDlg,
                                                          std::chrono::seconds autoRetryDelay,
                                                          const Zstring& soundFileSyncComplete,
                                                          const Zstring& soundFileAlertPending,
-                                                         const WindowLayout::Dimensions& dim,
+                                                         const WindowLayout::Rect& dlgRect,
                                                          bool autoCloseDialog) :
     jobNames_(jobNames),
     startTime_(startTime),
@@ -385,7 +385,7 @@ StatusHandlerFloatingDialog::StatusHandlerFloatingDialog(wxFrame* parentDlg,
     soundFileAlertPending_(soundFileAlertPending)
 {
     //set *after* initializer list => callbacks during construction to getErrorStats()!
-    progressDlg_ = SyncProgressDialog::create(dim, [this] { userRequestCancel(); }, *this, parentDlg, true /*showProgress*/, autoCloseDialog,
+    progressDlg_ = SyncProgressDialog::create(dlgRect, [this] { userRequestCancel(); }, *this, parentDlg, true /*showProgress*/, autoCloseDialog,
                                               jobNames, std::chrono::system_clock::to_time_t(startTime), ignoreErrors, autoRetryCount, PostSyncAction::none);
 }
 

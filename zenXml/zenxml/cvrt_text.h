@@ -127,12 +127,11 @@ enum class TextType
 };
 
 template <class T>
-struct GetTextType : std::integral_constant<TextType,
-    std::is_same_v<T, bool>    ? TextType::boolean :
-    isStringLike<T>           ? TextType::string : //string before number to correctly handle char/wchar_t -> this was an issue with Loki only!
-    isArithmetic<T>           ? TextType::number : //
-    IsChronoDuration<T>::value ? TextType::chrono :
-    TextType::other> {};
+constexpr TextType getTextType = std::is_same_v<T, bool> ? TextType::boolean :
+                                 isStringLike<T>            ? TextType::string : //string before number to correctly handle char/wchar_t -> this was an issue with Loki only!
+                                 isArithmetic<T>            ? TextType::number : //
+                                 IsChronoDuration<T>::value ? TextType::chrono :
+                                 TextType::other;
 
 //######################################################################################
 
@@ -237,14 +236,14 @@ struct ConvertText<T, TextType::other>
 template <class T> inline
 void writeText(const T& value, std::string& output)
 {
-    ConvertText<T, GetTextType<T>::value>().writeText(value, output);
+    ConvertText<T, getTextType<T>>().writeText(value, output);
 }
 
 
 template <class T> inline
 bool readText(const std::string& input, T& value)
 {
-    return ConvertText<T, GetTextType<T>::value>().readText(input, value);
+    return ConvertText<T, getTextType<T>>().readText(input, value);
 }
 }
 

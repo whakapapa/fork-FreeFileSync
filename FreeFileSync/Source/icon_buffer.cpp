@@ -76,7 +76,6 @@ public:
             workLoad_ = newLoad;
         }
         conditionNewWork_.notify_all(); //instead of notify_one(); work around bug: https://svn.boost.org/trac/boost/ticket/7796
-        //condition handling, see: https://www.boost.org/doc/libs/1_43_0/doc/html/thread/synchronization.html#thread.synchronization.condvar_ref
     }
 
     void add(const AbstractPath& filePath) //context of main thread
@@ -400,7 +399,7 @@ wxImage IconBuffer::genericFileIcon(IconSize sz)
     {
         return extractWxImage(fff::genericFileIcon(IconBuffer::getPixSize(sz))); //throw SysError
     }
-    catch (SysError&) { assert(false); return wxNullImage; }
+    catch ([[maybe_unused]] const SysError& e) { assert(false); return wxNullImage; }
 }
 
 
@@ -410,7 +409,7 @@ wxImage IconBuffer::genericDirIcon(IconSize sz)
     {
         return extractWxImage(fff::genericDirIcon(IconBuffer::getPixSize(sz))); //throw SysError
     }
-    catch (SysError&) { assert(false); return wxNullImage; }
+    catch ([[maybe_unused]] const SysError& e) { assert(false); return wxNullImage; }
 }
 
 

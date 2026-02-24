@@ -14,7 +14,7 @@ namespace zen
 {
 //convert all(!) char- and wchar_t-based "string-like" objects applying UTF conversions (but only if necessary!)
 template <class TargetString, class SourceString>
-TargetString utfTo(const SourceString& str);
+TargetString utfTo(SourceString&& str);
 
 constexpr std::string_view BYTE_ORDER_MARK_UTF8 = "\xEF\xBB\xBF";
 
@@ -222,12 +222,6 @@ private:
 
 //----------------------------------------------------------------------------------------------------------------
 
-template <class Function> inline void codePointToUtfImpl(CodePoint cp, Function writeOutput, std::integral_constant<int, 1>) { codePointToUtf8 (cp, writeOutput); } //UTF8-char
-template <class Function> inline void codePointToUtfImpl(CodePoint cp, Function writeOutput, std::integral_constant<int, 2>) { codePointToUtf16(cp, writeOutput); } //Windows: UTF16-wchar_t
-template <class Function> inline void codePointToUtfImpl(CodePoint cp, Function writeOutput, std::integral_constant<int, 4>) { writeOutput(cp); } //other OS: UTF32-wchar_t
-
-//----------------------------------------------------------------------------------------------------------------
-
 template <class CharType, int charSize>
 class UtfDecoderImpl;
 
@@ -255,7 +249,7 @@ private:
 
 
 template <class CharType>
-class UtfDecoderImpl<CharType, 4> //other OS: UTF32-wchar_t
+class UtfDecoderImpl<CharType, 4> //Linux/macOS: UTF32-wchar_t
 {
 public:
     UtfDecoderImpl(const CharType* str, size_t len) : it_(reinterpret_cast<const CodePoint*>(str)), last_(it_ + len) {}
@@ -263,7 +257,12 @@ public:
     {
         if (it_ == last_)
             return {};
-        return *it_++;
+
+        CodePoint cp = *it_++;
+        if ((LEAD_SURROGATE <= cp && cp <= TRAIL_SURROGATE_MAX) || cp > CODE_POINT_MAX)
+            cp = REPLACEMENT_CHAR;
+
+        return cp;
     }
 private:
     const CodePoint* it_;
@@ -279,9 +278,15 @@ using UtfDecoder = impl::UtfDecoderImpl<CharType, sizeof(CharType)>;
 template <class CharType, class Function> inline
 void codePointToUtf(impl::CodePoint cp, Function writeOutput) //"writeOutput" is a unary function taking a CharType
 {
-    return impl::codePointToUtfImpl(cp, writeOutput, std::integral_constant<int, sizeof(CharType)>());
+    if constexpr (sizeof(CharType) == 1) //UTF8-char
+        impl::codePointToUtf8 (cp, writeOutput);
+    else if constexpr (sizeof(CharType) == 2) //Windows: UTF16-wchar_t
+        impl::codePointToUtf16(cp, writeOutput);
+    else if constexpr (sizeof(CharType) == 4) //Linux/macOS: UTF32-wchar_t
+        writeOutput(cp);
+    else
+        static_assert(false);
 }
-
 
 //-------------------------------------------------------------------------------------------
 
@@ -311,18 +316,20 @@ size_t unicodeLength(const UtfString& str) //return number of code points (+ cor
 
 
 template <class UtfStringOut, class UtfStringIn> inline
-UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, size_t uniPosLast) //return position of unicode char in UTF-encoded string
+UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, size_t uniPosLast) //return position of Unicode char in UTF-encoded string
 {
-    assert(uniPosFirst <= uniPosLast && uniPosLast <= unicodeLength(str));
     using namespace impl;
     using CharType = GetCharTypeT<UtfStringIn>;
+    assert(uniPosFirst <= uniPosLast && uniPosLast <= unicodeLength(str));
+
+    if (uniPosFirst >= uniPosLast)
+        return {};
 
     UtfStringOut output;
-    assert(uniPosFirst <= uniPosLast);
-    if (uniPosFirst >= uniPosLast) //optimize for empty range
-        return output;
+    static_assert(std::is_same_v<GetCharTypeT<UtfStringOut>, CharType>);
 
     UtfDecoder<CharType> decoder(strBegin(str), strLength(str));
+
     for (size_t uniPos = 0; std::optional<CodePoint> cp = decoder.getNext(); ++uniPos) //[!] declaration in condition part of the for-loop
         if (uniPos >= uniPosFirst)
         {
@@ -335,34 +342,25 @@ UtfStringOut getUnicodeSubstring(const UtfStringIn& str, size_t uniPosFirst, siz
 
 //-------------------------------------------------------------------------------------------
 
-namespace impl
-{
 template <class TargetString, class SourceString> inline
-TargetString utfTo2(const SourceString& str, std::true_type) { return copyStringTo<TargetString>(str); }
-
-
-template <class TargetString, class SourceString> inline
-TargetString utfTo2(const SourceString& str, std::false_type)
+TargetString utfTo(SourceString&& str)
 {
-    using CharSrc = GetCharTypeT<SourceString>;
-    using CharTrg = GetCharTypeT<TargetString>;
-    static_assert(sizeof(CharSrc) != sizeof(CharTrg));
+    if constexpr (std::bool_constant<sizeof(GetCharTypeT<SourceString>) == sizeof(GetCharTypeT<TargetString>)>())
+        return copyStringTo<TargetString>(std::forward<SourceString>(str));
+    else
+    {
+        using CharSrc = GetCharTypeT<SourceString>;
+        using CharTrg = GetCharTypeT<TargetString>;
+        static_assert(sizeof(CharSrc) != sizeof(CharTrg));
 
-    TargetString output;
+        TargetString output;
 
-    UtfDecoder<CharSrc> decoder(strBegin(str), strLength(str));
-    while (const std::optional<CodePoint> cp = decoder.getNext())
-        codePointToUtf<CharTrg>(*cp, [&](CharTrg c) { output += c; });
+        UtfDecoder<CharSrc> decoder(strBegin(str), strLength(str));
+        while (const std::optional<impl::CodePoint> cp = decoder.getNext())
+            codePointToUtf<CharTrg>(*cp, [&](CharTrg c) { output += c; });
 
-    return output;
-}
-}
-
-
-template <class TargetString, class SourceString> inline
-TargetString utfTo(const SourceString& str)
-{
-    return impl::utfTo2<TargetString>(str, std::bool_constant<sizeof(GetCharTypeT<SourceString>) == sizeof(GetCharTypeT<TargetString>)>());
+        return output;
+    }
 }
 }
 

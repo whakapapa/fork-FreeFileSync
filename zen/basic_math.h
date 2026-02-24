@@ -77,13 +77,12 @@ int sign(T value) //returns one of {-1, 0, 1}
     return value < 0 ? -1 : (value > 0 ? 1 : 0);
 }
 
-/*
-part of C++11 now!
+
+#if 0 //part of C++11 now!
+//by factor 1.5 to 3 faster than boost::minmax_element (=two-step algorithm) for built-in types!
 template <class InputIterator, class Compare> inline
 std::pair<InputIterator, InputIterator> minMaxElement(InputIterator first, InputIterator last, Compare compLess)
 {
-    //by factor 1.5 to 3 faster than boost::minmax_element (=two-step algorithm) for built-in types!
-
     InputIterator itMin = first;
     InputIterator itMax = first;
 
@@ -119,7 +118,8 @@ std::pair<InputIterator, InputIterator> minMaxElement(InputIterator first, Input
 {
     return minMaxElement(first, last, std::less());
 }
-*/
+#endif
+
 
 template <class T, class InputIterator> inline
 auto roundToGrid(T val, InputIterator first, InputIterator last)
@@ -154,12 +154,30 @@ auto intDivRound(N num, D den)
     static_assert(isInteger<N>&& isInteger<D>);
     static_assert(isSignedInt<N> == isSignedInt<D>); //until further
     assert(den != 0);
+#if 1 //avoid overflow/underflow + bonus: no UB due to std::abs(INT_MIN) because |r| < |den| <= |INT_MIN|
+    const auto q = num / den; //single idiv/div
+    const auto r = num % den; //
+
     if constexpr (isSignedInt<N>)
     {
-        if ((num < 0) != (den < 0))
-            return (num - den / 2) / den;
+        auto r2 = std::abs(r);
+        if (den < 0)
+            r2 += den;
+
+        const decltype(q) shift = r2 >= den - r2;
+
+        return q + ((num < 0) == (den < 0) ? shift : -shift);
     }
-    return (num + den / 2) / den;
+    else
+        return q + (r >= den - r);
+#else
+    const auto half = den / 2;
+
+    if constexpr (isSignedInt<N>)
+        return (num + ((num < 0) == (den < 0) ? half : -half)) / den;
+    else
+        return (num + half) / den;
+#endif
 }
 
 
@@ -170,15 +188,25 @@ auto intDivCeil(N num, D den)
     static_assert(isInteger<N>&& isInteger<D>);
     static_assert(isSignedInt<N> == isSignedInt<D>); //until further
     assert(den != 0);
+#if 1 //avoids overflow/underflow
+    const auto q = num / den; //single idiv/div
+    const auto r = num % den; //
+
+    if constexpr (isSignedInt<N>)
+        return q + (r != 0 && (num < 0) == (den < 0));
+    else
+        return q + (r != 0);
+#else
     if constexpr (isSignedInt<N>)
     {
         if ((num < 0) != (den < 0))
             return num / den;
 
-        if (num < 0 && den < 0)
-            num += 2; //return (num + den + 1) / den
+        return (num + den + (num < 0 ? 1 : - 1)) / den;
     }
-    return (num + den - 1) / den;
+    else
+        return (num + den - 1) / den;
+#endif
 }
 
 
@@ -191,30 +219,32 @@ auto intDivFloor(N num, D den)
     assert(den != 0);
     if constexpr (isSignedInt<N>)
     {
+#if 1 //avoid overflow/underflow
+        const auto q = num / den; //single idiv
+        const auto r = num % den; //
+
+        return q - (r != 0 && (num < 0) != (den < 0));
+#else
         if ((num < 0) != (den < 0))
-        {
-            if (num < 0)
-                num += 2; //return (num - den + 1) / den
-
-            return (num - den - 1) / den;
-        }
+            return (num - den + (num < 0 ? 1 : - 1)) / den;
+        else
+            return num / den;
+#endif
     }
-    return num / den;
+    else
+        return num / den;
 }
 
-
-namespace
-{
-template <size_t N, class T> struct PowerImpl;
-//let's use non-recursive specializations to help the compiler
-template <class T> struct PowerImpl<2, T> { static constexpr T result(T value) { return value * value; } };
-template <class T> struct PowerImpl<3, T> { static constexpr T result(T value) { return value * value * value; } };
-}
 
 template <size_t N, class T> inline
 constexpr T power(T value)
 {
-    return PowerImpl<N, T>::result(value);
+    if constexpr (N == 2)
+        return value * value;
+    else if constexpr (N == 3)
+        return value * value * value;
+    else //need more!?
+        static_assert(false);
 }
 
 

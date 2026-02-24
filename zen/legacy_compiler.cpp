@@ -5,24 +5,28 @@
 // *****************************************************************************
 
 #include "legacy_compiler.h"
+#include <cassert>
 #include <charconv>
 /*  1. including <charconv> in header file blows up VC++:
        - string_tools.h: "An internal error has occurred in the compiler. (compiler file 'd:\agent\_work\1\s\src\vctools\Compiler\Utc\src\p2\p2symtab.c', line 2618)"
        - PCH: "fatal error C1076: compiler limit: internal heap limit reached"
         => include in separate compilation unit
     2. Disable "C/C++ -> Code Generation -> Smaller Type Check" (and PCH usage!), at least for this compilation unit: https://github.com/microsoft/STL/pull/171   */
+#include <cmath> //NAN
+
 
 double zen::fromChars(const char* first, const char* last)
 {
     double num = 0;
     [[maybe_unused]] const std::from_chars_result rv = std::from_chars(first, last, num);
-    return num;
+    return rv.ec == std::errc{} ? num : NAN;
 }
 
 
 char* zen::toChars(char* first, char* last, double num)
 {
     const std::to_chars_result rv = std::to_chars(first, last, num);
+    assert(rv.ec != std::errc::value_too_large);
     return rv.ec == std::errc{} ? rv.ptr : first;
 }
 

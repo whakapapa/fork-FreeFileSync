@@ -39,7 +39,7 @@ public:
 };
 
 //wxButton::SetBitmap() also supports "image + text", but screws up proper gap and border handling
-void setBitmapTextLabel(wxBitmapButton& btn, const wxImage& img, const wxString& text, int gap = dipToWxsize(5), int border = dipToWxsize(5));
+void setBitmapTextLabel(wxBitmapButton& btn, const wxImage& img, const wxString& text, int gap = dipToWxsize(5), int pad = dipToWxsize(5));
 
 //set bitmap label flicker free:
 void setImage(wxAnyButton& button, const wxImage& bmp);
@@ -59,11 +59,11 @@ inline wxColor getColorToggleButtonFill  () { return {0xcc, 0xe4, 0xf8}; } //lig
 
 //################################### implementation ###################################
 inline
-void setBitmapTextLabel(wxBitmapButton& btn, const wxImage& img, const wxString& text, int gap, int border)
+void setBitmapTextLabel(wxBitmapButton& btn, const wxImage& img, const wxString& text, int gap, int pad)
 {
-    assert(gap >= 0 && border >= 0);
-    gap    = std::max(0, gap);
-    border = std::max(0, border);
+    assert(gap >= 0 && pad >= 0);
+    gap = std::max(0, gap);
+    pad = std::max(0, pad);
 
     wxImage imgTxt = createImageFromText(text, btn.GetFont(), btn.GetForegroundColour());
     if (img.IsOk())
@@ -71,9 +71,14 @@ void setBitmapTextLabel(wxBitmapButton& btn, const wxImage& img, const wxString&
                  stackImages(img, imgTxt, ImageStackLayout::horizontal, ImageStackAlignment::center, wxsizeToScreen(gap)) :
                  stackImages(imgTxt, img, ImageStackLayout::horizontal, ImageStackAlignment::center, wxsizeToScreen(gap));
 
-    //SetMinSize() instead of SetSize() is needed here for wxWidgets layout determination to work correctly
-    btn.SetMinSize({screenToWxsize(imgTxt.GetWidth()) + 2 * border,
-                    std::max(screenToWxsize(imgTxt.GetHeight()) + 2 * border, getDefaultButtonHeight())});
+    const int margin = 0;
+    const int border = 1;
+    const int padding = 5;
+    const int extra = margin + border + std::max(pad, padding); //SetMinSize() relates to *outer* button size including margin + border + padding
+
+    //SetMinSize() instead of SetSize() is needed for wxWidgets layout determination to work correctly
+    btn.SetMinSize({         screenToWxsize(imgTxt.GetWidth ()) + 2 * extra,
+                             std::max(screenToWxsize(imgTxt.GetHeight()) + 2 * extra, getDefaultButtonHeight())});
 
     setImage(btn, imgTxt);
 }

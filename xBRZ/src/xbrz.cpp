@@ -400,7 +400,7 @@ void blendPixel(const Kernel_3x3& ker,
         auto eq   = [&](uint32_t pix1, uint32_t pix2) { return ColorDistance::dist(pix1, pix2, cfg.testAttribute) < cfg.equalColorTolerance; };
         auto dist = [&](uint32_t pix1, uint32_t pix2) { return ColorDistance::dist(pix1, pix2, cfg.testAttribute); };
 
-        const bool doLineBlend = [&] -> bool
+        const bool doLineBlend = [&]
         {
             if (getBottomR(blend) >= BLEND_DOMINANT)
                 return true;
@@ -1199,7 +1199,7 @@ void xbrz::scale(size_t factor, const uint32_t* src, uint32_t* trg, int srcWidth
 }
 
 
-bool xbrz::equalColorTest2(uint32_t col1, uint32_t col2, ColorFormat colFmt, double equalColorTolerance, double testAttribute)
+bool xbrz::equalColorTest(uint32_t col1, uint32_t col2, ColorFormat colFmt, double equalColorTolerance, double testAttribute)
 {
     switch (colFmt)
     {

@@ -53,7 +53,6 @@ int getDefaultButtonHeight()
 
 
 
-
 //--------------- impelementation -------------------------------------------
 inline
 void setStandardButtonLayout(wxBoxSizer& sizer, const StdButtons& buttons)

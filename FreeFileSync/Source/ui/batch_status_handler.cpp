@@ -22,7 +22,7 @@ BatchStatusHandler::BatchStatusHandler(bool showProgress,
                                        std::chrono::seconds autoRetryDelay,
                                        const Zstring& soundFileSyncComplete,
                                        const Zstring& soundFileAlertPending,
-                                       const WindowLayout::Dimensions& dims,
+                                       const WindowLayout::Rect& dlgRect,
                                        bool autoCloseDialog,
                                        PostBatchAction postBatchAction,
                                        BatchErrorHandling batchErrorHandling) :
@@ -35,7 +35,7 @@ BatchStatusHandler::BatchStatusHandler(bool showProgress,
     batchErrorHandling_(batchErrorHandling)
 {
     //set *after* initializer list => callbacks during construction to getErrorStats()!
-    progressDlg_ = SyncProgressDialog::create(dims, [this] { userRequestCancel(); }, *this, nullptr /*parentWindow*/, showProgress, autoCloseDialog,
+    progressDlg_ = SyncProgressDialog::create(dlgRect, [this] { userRequestCancel(); }, *this, nullptr /*parentWindow*/, showProgress, autoCloseDialog,
     {jobName}, std::chrono::system_clock::to_time_t(startTime), ignoreErrors, autoRetryCount, [&]
     {
         switch (postBatchAction)

@@ -15,6 +15,8 @@ using namespace zen;
 
 namespace
 {
+
+
 int curlInitLevel = 0; //support interleaving initialization calls!
 //zero-initialized POD => not subject to static initialization order fiasco
 }
@@ -50,7 +52,9 @@ void zen::libcurlTearDown()
 
 HttpSession::HttpSession(const Zstring& server, bool useTls, const Zstring& caCertFilePath) : //throw SysError
     serverPrefix_((useTls ? "https://" : "http://") + utfTo<std::string>(server)),
-    caCertFilePath_(utfTo<std::string>(caCertFilePath)) {}
+    caCertFilePath_(utfTo<std::string>(caCertFilePath))
+{
+}
 
 
 HttpSession::~HttpSession()
@@ -408,4 +412,10 @@ std::wstring zen::formatCurlStatusCode(CURLcode sc)
     static_assert(CURL_LAST == CURLE_ECH_REQUIRED + 1);
 
     return replaceCpy<std::wstring>(L"Curl status %x", L"%x", numberTo<std::wstring>(static_cast<int>(sc)));
+}
+
+//===================================================================================================
+
+namespace
+{
 }

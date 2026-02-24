@@ -103,6 +103,13 @@ unsigned int uintDivRound(unsigned int num, unsigned int den)
 {
     assert(den != 0);
     return (num + den / 2) / den;
+
+#if 0 //alternative: no possibility for integer overflow, but is it faster? probably not: https://godbolt.org/z/orzb9hbKs
+    const auto q = num / den; //single div instruction
+    const auto r = num % den; //
+
+    return q + (r >= den - r);
+#endif
 }
 
 

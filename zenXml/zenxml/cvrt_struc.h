@@ -90,11 +90,10 @@ enum class ValueType
 };
 
 template <class T>
-using GetValueType = std::integral_constant<ValueType,
-      GetTextType   <T>::value != TextType::other ? ValueType::other : //some string classes are also STL containers, so check this first
-      IsStlContainer<T>::value ? ValueType::stlContainer :
-      IsStlPair     <T>::value ? ValueType::stlPair :
-      ValueType::other>;
+constexpr ValueType getValueType = getTextType<T> != TextType::other ? ValueType::other : //some string classes are also STL containers, so check this first
+                                   IsStlContainer<T>::value ? ValueType::stlContainer :
+                                   IsStlPair     <T>::value ? ValueType::stlPair :
+                                   ValueType::other;
 
 
 template <class T, ValueType type>
@@ -188,14 +187,14 @@ struct ConvertElement<T, ValueType::other>
 template <class T> inline
 void writeStruc(const T& value, XmlElement& output)
 {
-    ConvertElement<T, GetValueType<T>::value>().writeStruc(value, output);
+    ConvertElement<T, getValueType<T>>().writeStruc(value, output);
 }
 
 
 template <class T> inline
 bool readStruc(const XmlElement& input, T& value)
 {
-    return ConvertElement<T, GetValueType<T>::value>().readStruc(input, value);
+    return ConvertElement<T, getValueType<T>>().readStruc(input, value);
 }
 }
 

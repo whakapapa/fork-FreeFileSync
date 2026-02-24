@@ -17,9 +17,8 @@
 #include <wx+/bitmap_button.h>
 #include <wx+/choice_enum.h>
 #include <wx+/rtl.h>
-#include <wx+/no_flicker.h>
 #include <wx+/image_tools.h>
-#include <wx+/window_layout.h>
+#include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/async_task.h>
 #include <wx+/image_resources.h>
@@ -145,8 +144,10 @@ AboutDlg::AboutDlg(wxWindow* parent) : AboutDlgGenerated(parent)
     //have animal + text match *final* dialog width
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
+#endif
 
     {
         const int imageWidth = (m_panelDonate->GetSize().GetWidth() - 5 - 5 - 5 /* grey border*/) / 2;
@@ -164,9 +165,10 @@ AboutDlg::AboutDlg(wxWindow* parent) : AboutDlgGenerated(parent)
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); }); //enable dialog-specific key events
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_buttonClose->SetFocus(); //on GTK ESC is only associated with wxID_OK correctly if we set at least *any* focus at all!!!
@@ -298,9 +300,9 @@ CloudSetupDlg::CloudSetupDlg(wxWindow* parent, Zstring& folderPathPhrase, Zstrin
     m_textCtrlServer->SetMinSize({dipToWxsize(260), -1});
 
     m_textCtrlPort->SetMinSize({dipToWxsize(60), -1});
-    setDefaultWidth(*m_spinCtrlConnectionCount);
-    setDefaultWidth(*m_spinCtrlChannelCountSftp);
-    setDefaultWidth(*m_spinCtrlTimeout);
+    fixSpinCtrl(*m_spinCtrlConnectionCount);
+    fixSpinCtrl(*m_spinCtrlChannelCountSftp);
+    fixSpinCtrl(*m_spinCtrlTimeout);
 
     setupFileDrop(*m_panelAuth);
     m_panelAuth->Bind(EVENT_DROP_FILE, [this](FileDropEvent& event) { onKeyFileDropped(event); });
@@ -413,9 +415,10 @@ CloudSetupDlg::CloudSetupDlg(wxWindow* parent, Zstring& folderPathPhrase, Zstrin
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
     //=> works like a charm for GTK with window resizing problems and title bar corruption; e.g. Debian!!!
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     updateGui(); //*after* SetSizeHints when standard dialog height has been calculated
@@ -979,9 +982,10 @@ CopyToDialog::CopyToDialog(wxWindow* parent,
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); }); //enable dialog-specific key events
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_buttonOK->SetFocus();
@@ -1070,7 +1074,7 @@ private:
 
         //use system icon if available (can fail on Linux??)
         try { return extractWxImage(fff::getTrashIcon(imgDefault.GetHeight())); /*throw SysError*/ }
-        catch (SysError&) { assert(false); return imgDefault; }
+        catch ([[maybe_unused]] const SysError& e) { assert(false); return imgDefault; }
     }();
 
     //output-only parameters:
@@ -1107,9 +1111,10 @@ DeleteDialog::DeleteDialog(wxWindow* parent,
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); }); //enable dialog-specific key events
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_buttonOK->SetFocus();
@@ -1259,9 +1264,10 @@ SyncConfirmationDlg::SyncConfirmationDlg(wxWindow* parent,
     setIntValue(*m_staticTextDeleteRight, st.deleteCount<SelectSide::right>(), *m_bitmapDeleteRight, "so_delete_right_sicon");
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_buttonOK->SetFocus();
@@ -1440,7 +1446,7 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     const wxImage imgFileManagerSmall_([]
     {
         try { return extractWxImage(fff::getFileManagerIcon(dipToScreen(20))); /*throw SysError*/ }
-        catch (SysError&) { assert(false); return loadImage("file_manager", dipToScreen(20)); }
+        catch ([[maybe_unused]] const SysError& e) { assert(false); return loadImage("file_manager", dipToScreen(20)); }
     }());
     setImage(*m_bpButtonShowLogFolder, imgFileManagerSmall_);
     m_bpButtonShowLogFolder->SetToolTip(translate(extCommandFileManager.description));//translate default external apps on the fly: "Show in Explorer"
@@ -1452,7 +1458,7 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
 
     logFolderSelector_.setPath(globalCfg.logFolderPhrase);
 
-    setDefaultWidth(*m_spinCtrlLogFilesMaxAge);
+    fixSpinCtrl(*m_spinCtrlLogFilesMaxAge);
 
     setImage(*m_bitmapSettings,           loadImage("settings"));
     setImage(*m_bitmapWarnings,           loadImage("msg_warning", dipToScreen(20)));
@@ -1631,9 +1637,10 @@ OptionsDlg::OptionsDlg(wxWindow* parent, GlobalConfig& globalCfg) :
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); }); //enable dialog-specific key events
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     //restore actual value:
@@ -2037,9 +2044,10 @@ SelectTimespanDlg::SelectTimespanDlg(wxWindow* parent, time_t& timeFrom, time_t&
     Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) { onLocalKeyEvent(event); }); //enable dialog-specific key events
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_buttonOK->SetFocus();
@@ -2147,9 +2155,10 @@ PasswordPromptDlg::PasswordPromptDlg(wxWindow* parent, const std::wstring& msg, 
     m_textCtrlPasswordVisible->Hide();
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     updateGui(); //*after* SetSizeHints when standard dialog height has been calculated
@@ -2227,14 +2236,15 @@ CfgHighlightDlg::CfgHighlightDlg(wxWindow* parent, int& cfgHistSyncOverdueDays) 
 
     m_staticTextHighlight->Wrap(dipToWxsize(300));
 
-    setDefaultWidth(*m_spinCtrlOverdueDays);
+    fixSpinCtrl(*m_spinCtrlOverdueDays);
 
     m_spinCtrlOverdueDays->SetValue(cfgHistSyncOverdueDays);
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_spinCtrlOverdueDays->SetFocus();
@@ -2302,9 +2312,10 @@ ActivationDlg::ActivationDlg(wxWindow* parent,
     m_textCtrlOfflineActivationKey->ChangeValue(manualActivationKey);
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_buttonActivateOnline->SetFocus();
@@ -2409,9 +2420,10 @@ DownloadProgressWindow::Impl::Impl(wxWindow* parent, int64_t fileSizeTotal) :
     updateGui();
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     Show();

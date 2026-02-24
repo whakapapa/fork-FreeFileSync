@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 #include "thread.h"
+#include "globals.h"
     #include <sys/prctl.h>
 
 using namespace zen;
@@ -21,17 +22,17 @@ void zen::setCurrentThreadName(const Zstring& threadName)
 
 namespace
 {
-//don't make this a function-scope static (avoid code-gen for "magic static")
-const std::thread::id globalMainThreadId = std::this_thread::get_id();
+constinit Global<const std::thread::id> globalMainThreadId;
+//ensure no later initialization than during static construction
+GLOBAL_RUN_ONCE(globalMainThreadId.set(std::make_unique<std::thread::id>(std::this_thread::get_id())));
 }
 
 
 bool zen::runningOnMainThread()
 {
-    if (globalMainThreadId == std::thread::id()) //if called during static initialization!
-        return true;
+    if (const auto globalTId = globalMainThreadId.get())
+        return std::this_thread::get_id() == *globalTId;
 
-    return std::this_thread::get_id() == globalMainThreadId;
+    assert(false);
+    return true; //called during static initialization => "very likely" the main thread :>
 }
-
-

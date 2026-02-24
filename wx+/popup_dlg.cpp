@@ -11,8 +11,7 @@
 #include <wx/display.h>
 #include <wx/sound.h>
 #include "bitmap_button.h"
-#include "no_flicker.h"
-#include "window_layout.h"
+#include "window_tools.h"
 #include "image_resources.h"
 #include "popup_dlg_generated.h"
 #include "taskbar.h"
@@ -289,9 +288,10 @@ public:
 
 
         GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
         Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
         //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
         Center(); //apply *after* dialog size change!
 
 

@@ -32,7 +32,7 @@ unsigned char srgbEncode(double c)
 inline //https://www.w3.org/WAI/GL/wiki/Relative_luminance
 double relLuminance(double r, double g, double b) //input: gamma-decoded sRGB
 {
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b; //= the Y part of CIEXYZ
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b; //= the Y part of CIE XYZ
 }
 
 
@@ -126,7 +126,7 @@ wxColor enhanceContrast(wxColor col1, const wxColor& col2, double contrastRatioM
 }
 
 #if 0
-//toy sample code: gamma-encoded sRGB -> CIEXYZ -> CIELAB and back: input === output RGB color (verified)
+//toy sample code: gamma-encoded sRGB -> CIE XYZ -> CIE LAB and back: input === output RGB color (verified)
 wxColor colorConversion(const wxColor& col)
 {
     assert(col.GetAlpha() == wxALPHA_OPAQUE);

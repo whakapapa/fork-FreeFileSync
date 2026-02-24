@@ -240,7 +240,7 @@ void ConfigView::setSortDirection(ColumnTypeCfg colType, bool ascending)
 }
 
 
-template <bool ascending>
+template <SortDirection sortDir>
 void ConfigView::sortListViewImpl()
 {
     const auto lessCfgName = [](CfgFileList::iterator lhs, CfgFileList::iterator rhs)
@@ -256,9 +256,9 @@ void ConfigView::sortListViewImpl()
         if (lhs->second.isLastRunCfg != rhs->second.isLastRunCfg)
             return lhs->second.isLastRunCfg < rhs->second.isLastRunCfg; //"last session" label should be (always) last
 
-        return makeSortDirection(std::greater(), std::bool_constant<ascending>())(
-                   lhs->second.cfgItem.lastRunStats.startTime,
-                   rhs->second.cfgItem.lastRunStats.startTime);
+        return isLessFor<sortDir>(std::greater(),
+                                  lhs->second.cfgItem.lastRunStats.startTime,
+                                  rhs->second.cfgItem.lastRunStats.startTime);
         //[!] ascending lastSync shows lowest "days past" first <=> highest lastSyncTime first
     };
 
@@ -274,7 +274,7 @@ void ConfigView::sortListViewImpl()
 
         //primary sort order
         if (haveResultL && lhs->second.cfgItem.lastRunStats.syncResult != rhs->second.cfgItem.lastRunStats.syncResult)
-            return makeSortDirection(std::greater(), std::bool_constant<ascending>())(lhs->second.cfgItem.lastRunStats.syncResult, rhs->second.cfgItem.lastRunStats.syncResult);
+            return isLessFor<sortDir>(std::greater(), lhs->second.cfgItem.lastRunStats.syncResult, rhs->second.cfgItem.lastRunStats.syncResult);
 
         //secondary sort order
         return LessNaturalSort()(lhs->second.name, rhs->second.name);
@@ -295,7 +295,7 @@ void ConfigView::sortListViewImpl()
                 ++it;
 
             //simplify aggregation logic by not having to consider "ascending/descending"
-            if (!ascending)
+            if (sortDir == SortDirection::descending)
                 std::reverse(cfgListView_.begin(), cfgListView_.end());
             break;
 
@@ -313,9 +313,9 @@ void ConfigView::sortListViewImpl()
 void ConfigView::sortListView()
 {
     if (sortAscending_)
-        sortListViewImpl<true>();
+        sortListViewImpl<SortDirection::ascending>();
     else
-        sortListViewImpl<false>();
+        sortListViewImpl<SortDirection::descending>();
 }
 
 //-------------------------------------------------------------------------------------------

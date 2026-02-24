@@ -26,7 +26,6 @@ enum class BatchErrorHandling
     cancel
 };
 
-
 enum class PostBatchAction
 {
     none,
@@ -121,14 +120,14 @@ struct DpiLayout
 {
     struct
     {
-        std::optional<wxSize> size;
+        wxSize size;
         std::optional<wxPoint> pos;
         bool isMaximized = false;
     } mainDlg; //WindowLayout::getBeforeClose()
 
     struct
     {
-        std::optional<wxSize> size;
+        wxSize size;
         //std::optional<wxPoint> pos; -> most users probably want it centered, but others at a fixed (relative??) location
         bool isMaximized = false;
     } progressDlg;

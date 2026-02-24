@@ -225,7 +225,6 @@ public:
     char peekNextChar() const { return it_ == itEnd_ ? '\0' : *it_; }
 
 private:
-    /**/
     std::string_view::const_iterator it_;
     const std::string_view::const_iterator itEnd_;
 };
@@ -870,14 +869,15 @@ private:
     };
     using FeatureList = std::unordered_map<Zstring /*server name*/, Features, StringHashAsciiNoCase, StringEqualAsciiNoCase>;
 
+    inline static constinit Global<Protected<FeatureList>> globalServerFeatures_; //keep outside function-scope to avoid magic statics!
+
     bool getFeatureSupport(bool Features::* status) //throw SysError
     {
         if (!featureCache_)
         {
-            static constinit FunStatGlobal<Protected<FeatureList>> globalServerFeatures;
-            globalServerFeatures.setOnce([] { return std::make_unique<Protected<FeatureList>>(); });
+            globalServerFeatures_.setOnce([] { return std::make_unique<Protected<FeatureList>>(); });
 
-            const auto sf = globalServerFeatures.get();
+            const auto sf = globalServerFeatures_.get();
             if (!sf)
                 throw SysError(formatSystemError("FtpSession::getFeatureSupport", L"", L"Function call not allowed during application shutdown."));
 
@@ -972,11 +972,7 @@ class FtpSessionManager //reuse (healthy) FTP sessions globally
     struct FtpSessionCache;
 
 public:
-    FtpSessionManager() : sessionCleaner_([this]
-    {
-        setCurrentThreadName(Zstr("Session Cleaner[FTP]"));
-        runGlobalSessionCleanUp(); /*throw ThreadStopRequest*/
-    }) {}
+    FtpSessionManager() {}
 
     void access(const FtpLogin& login, const std::function<void(FtpSession& session)>& useFtpSession /*throw X*/) //throw SysError, X
     {
@@ -999,6 +995,8 @@ public:
             else
                 sessionCfg = *cache.activeCfg;
         });
+
+        startGlobalSessionCleanUp();
 
         //create new FTP session outside the lock: 1. don't block other threads 2. non-atomic regarding "sessionCache"! => one session too many is not a problem!
         if (!ftpSession)
@@ -1081,47 +1079,55 @@ private:
     }
 
     //run a dedicated clean-up thread => it's unclear when the server let's a connection time out, so we do it preemptively
-    //context of worker thread:
-    void runGlobalSessionCleanUp() //throw ThreadStopRequest
+    void startGlobalSessionCleanUp()
     {
-        std::chrono::steady_clock::time_point lastCleanupTime;
-        for (;;)
+        static constinit std::once_flag onceStartThread; //=> no "magic static" code gen
+        std::call_once(onceStartThread, [this]
         {
-            const auto now = std::chrono::steady_clock::now();
-
-            if (now < lastCleanupTime + FTP_SESSION_CLEANUP_INTERVAL)
-                interruptibleSleep(lastCleanupTime + FTP_SESSION_CLEANUP_INTERVAL - now); //throw ThreadStopRequest
-
-            lastCleanupTime = std::chrono::steady_clock::now();
-
-            std::vector<Protected<FtpSessionCache>*> sessionCaches; //pointers remain stable, thanks to std::map<>
-
-            globalSessionCache_.access([&](GlobalFtpSessions& sessionsById)
+            sessionCleaner_ = InterruptibleThread([this]
             {
-                for (auto& [sessionId, idleSession] : sessionsById)
-                    sessionCaches.push_back(&idleSession);
-            });
+                setCurrentThreadName(Zstr("Session Cleaner[FTP]"));
 
-            for (Protected<FtpSessionCache>* sessionCache : sessionCaches)
+                std::chrono::steady_clock::time_point lastCleanupTime;
                 for (;;)
                 {
-                    bool done = false;
-                    sessionCache->access([&](FtpSessionCache& cache)
+                    const auto now = std::chrono::steady_clock::now();
+
+                    if (now < lastCleanupTime + FTP_SESSION_CLEANUP_INTERVAL)
+                        interruptibleSleep(lastCleanupTime + FTP_SESSION_CLEANUP_INTERVAL - now); //throw ThreadStopRequest
+
+                    lastCleanupTime = std::chrono::steady_clock::now();
+
+                    std::vector<Protected<FtpSessionCache>*> sessionCaches; //pointers remain stable, thanks to std::map<>
+
+                    globalSessionCache_.access([&](GlobalFtpSessions& sessionsById)
                     {
-                        for (std::unique_ptr<FtpSession>& ftpSession : cache.idleFtpSessions)
-                            if (!ftpSession->isHealthy()) //!isHealthy() sessions are destroyed after use => in this context this means they have been idle for too long
-                            {
-                                ftpSession.swap(cache.idleFtpSessions.back());
-                                /**/            cache.idleFtpSessions.pop_back(); //run ~FtpSession *inside* the lock! => avoid hitting server limits!
-                                return; //don't hold lock for too long: delete only one session at a time, then yield...
-                            }
-                        done = true;
+                        for (auto& [sessionId, idleSession] : sessionsById)
+                            sessionCaches.push_back(&idleSession);
                     });
-                    if (done)
-                        break;
-                    std::this_thread::yield(); //outside the lock
+
+                    for (Protected<FtpSessionCache>* sessionCache : sessionCaches)
+                        for (;;)
+                        {
+                            bool done = false;
+                            sessionCache->access([&](FtpSessionCache& cache)
+                            {
+                                for (std::unique_ptr<FtpSession>& ftpSession : cache.idleFtpSessions)
+                                    if (!ftpSession->isHealthy()) //!isHealthy() sessions are destroyed after use => in this context this means they have been idle for too long
+                                    {
+                                        ftpSession.swap(cache.idleFtpSessions.back());
+                                        /**/            cache.idleFtpSessions.pop_back(); //run ~FtpSession *inside* the lock! => avoid hitting server limits!
+                                        return; //don't hold lock for too long: delete only one session at a time, then yield...
+                                    }
+                                done = true;
+                            });
+                            if (done)
+                                break;
+                            std::this_thread::yield(); //outside the lock
+                        }
                 }
-        }
+            });
+        });
     }
 
     struct FtpSessionCache

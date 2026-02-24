@@ -76,7 +76,7 @@ public:
                                 std::chrono::seconds autoRetryDelay,
                                 const Zstring& soundFileSyncComplete,
                                 const Zstring& soundFileAlertPending,
-                                const zen::WindowLayout::Dimensions& dim,
+                                const zen::WindowLayout::Rect& dlgRect,
                                 bool autoCloseDialog); //noexcept!
     ~StatusHandlerFloatingDialog();
 
@@ -106,7 +106,7 @@ public:
     struct DlgOptions
     {
         bool autoCloseSelected;
-        zen::WindowLayout::Dimensions dim;
+        zen::WindowLayout::Rect dlgRect;
         FinalRequest finalRequest;
     };
     DlgOptions showResult();

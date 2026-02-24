@@ -444,8 +444,8 @@ private:
             const Zstring itemName = readItemName(); //
             const auto cmpVar = static_cast<CompareVariant>(readNumber<int32_t>(streamInSmallNum_)); //
 
-            const InSyncDescrLink descrL{static_cast<time_t>(readNumber<int64_t>(streamInBigNum_))}; //throw SysErrorUnexpectedEos
-            const InSyncDescrLink descrT{static_cast<time_t>(readNumber<int64_t>(streamInBigNum_))}; //
+            const InSyncDescrLink descrL{readNumber<int64_t>(streamInBigNum_)}; //throw SysErrorUnexpectedEos
+            const InSyncDescrLink descrT{readNumber<int64_t>(streamInBigNum_)}; //
 
             container.addSymlink(itemName,
                                  selectParam<leadSide>(descrL, descrT),
@@ -469,7 +469,7 @@ private:
 
     InSyncDescrFile readFileDescr() //throw SysErrorUnexpectedEos
     {
-        const auto modTime = static_cast<time_t>(readNumber<int64_t>(streamInBigNum_)); //throw SysErrorUnexpectedEos
+        const time_t modTime = readNumber<int64_t>(streamInBigNum_); //throw SysErrorUnexpectedEos
 
         AFS::FingerPrint filePrint = 0;
         if (streamVersion_ == 3) //TODO: remove migration code at some time! 2021-02-14
@@ -508,9 +508,9 @@ private:
                 const Zstring itemName = utfTo<Zstring>(readContainer<std::string>(inputBoth_));
                 const auto cmpVar = static_cast<CompareVariant>(readNumber<int32_t>(inputBoth_));
                 const uint64_t fileSize = readNumber<uint64_t>(inputBoth_);
-                const auto modTimeL = static_cast<time_t>(readNumber<int64_t>(inputLeft_));
+                const time_t modTimeL = readNumber<int64_t>(inputLeft_);
                 /*const auto fileIdL =*/ readContainer<std::string>(inputLeft_);
-                const auto modTimeR = static_cast<time_t>(readNumber<int64_t>(inputRight_));
+                const time_t modTimeR = readNumber<int64_t>(inputRight_);
                 /*const auto fileIdR =*/ readContainer<std::string>(inputRight_);
                 container.addFile(itemName, InSyncDescrFile{modTimeL, AFS::FingerPrint()}, InSyncDescrFile{modTimeR, AFS::FingerPrint()}, cmpVar, fileSize);
             }
@@ -520,8 +520,8 @@ private:
             {
                 const Zstring itemName = utfTo<Zstring>(readContainer<std::string>(inputBoth_));
                 const auto cmpVar = static_cast<CompareVariant>(readNumber<int32_t>(inputBoth_));
-                const auto modTimeL = static_cast<time_t>(readNumber<int64_t>(inputLeft_));
-                const auto modTimeR = static_cast<time_t>(readNumber<int64_t>(inputRight_));
+                const time_t modTimeL = readNumber<int64_t>(inputLeft_);
+                const time_t modTimeR = readNumber<int64_t>(inputRight_);
                 container.addSymlink(itemName, InSyncDescrLink{modTimeL}, InSyncDescrLink{modTimeR}, cmpVar);
             }
 
@@ -888,12 +888,12 @@ void fff::saveLastSynchronousState(const BaseFolderPair& baseFolder, bool transa
         bool loadSuccessR = false;
         std::vector<std::pair<AbstractPath, ParallelWorkItem>> parallelWorkload;
 
-        for (const auto& [dbPath, streamsOut, loadSuccess] :
+        for (auto& [dbPath, streamsOut, loadSuccess] :
              {
-                 std::tuple(dbPathL, &streamsL, &loadSuccessL),
-                 std::tuple(dbPathR, &streamsR, &loadSuccessR)
+                 std::tie(dbPathL, streamsL, loadSuccessL),
+                 std::tie(dbPathR, streamsR, loadSuccessR)
              })
-            parallelWorkload.emplace_back(dbPath, [&streamsOut = *streamsOut, &loadSuccess = *loadSuccess](ParallelContext& ctx) //throw ThreadStopRequest
+            parallelWorkload.emplace_back(dbPath, [&streamsOut, &loadSuccess](ParallelContext& ctx) //throw ThreadStopRequest
         {
             const std::wstring errMsg = tryReportingError([&] //throw ThreadStopRequest
             {
@@ -991,15 +991,15 @@ void fff::saveLastSynchronousState(const BaseFolderPair& baseFolder, bool transa
 
     std::vector<std::pair<AbstractPath, ParallelWorkItem>> parallelWorkloadSave, parallelWorkloadMove;
 
-    for (const auto& [dbPath, streams, saveSuccess, dbPathTmp] :
+    for (auto& [dbPath, streams, saveSuccess, dbPathTmp] :
          {
-             std::tuple(dbPathL, &streamsL, &saveSuccessL, &dbPathTmpL),
-             std::tuple(dbPathR, &streamsR, &saveSuccessR, &dbPathTmpR)
+             std::tie(dbPathL, streamsL, saveSuccessL, dbPathTmpL),
+             std::tie(dbPathR, streamsR, saveSuccessR, dbPathTmpR)
          })
     {
-        parallelWorkloadSave.emplace_back(dbPath, [&streams = *streams,
-                                                   &saveSuccess = *saveSuccess,
-                                                   &dbPathTmp = *dbPathTmp,
+        parallelWorkloadSave.emplace_back(dbPath, [&streams,
+                                                   &saveSuccess,
+                                                   &dbPathTmp,
                                                    transactionalCopy](ParallelContext& ctx) //throw ThreadStopRequest
         {
             const std::wstring errMsg = tryReportingError([&] //throw ThreadStopRequest
@@ -1025,7 +1025,7 @@ void fff::saveLastSynchronousState(const BaseFolderPair& baseFolder, bool transa
         });
         //----------------------------------------------------------------------------
         if (transactionalCopy && !AFS::hasNativeTransactionalCopy(dbPath))
-            parallelWorkloadMove.emplace_back(dbPath, [&dbPathTmp = *dbPathTmp](ParallelContext& ctx) //throw ThreadStopRequest
+            parallelWorkloadMove.emplace_back(dbPath, [&dbPathTmp](ParallelContext& ctx) //throw ThreadStopRequest
         {
             tryReportingError([&] //throw ThreadStopRequest
             {

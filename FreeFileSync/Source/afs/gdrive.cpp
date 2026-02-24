@@ -65,8 +65,8 @@ using PathBlockType  = PathAccessLocker<GdriveRawPath>::BlockType;
 
 namespace
 {
-//Google Drive REST API Overview:  https://developers.google.com/drive/api/v3/about-sdk
-//Google Drive REST API Reference: https://developers.google.com/drive/api/v3/reference
+//Google Drive REST API Overview:  https://developers.google.com/workspace/drive/api/guides/about-sdk
+//Google Drive REST API Reference: https://developers.google.com/workspace/drive/api/reference/rest/v3
 const Zchar* GOOGLE_REST_API_SERVER = Zstr("www.googleapis.com");
 
 constexpr std::chrono::seconds HTTP_SESSION_MAX_IDLE_TIME  (20);
@@ -189,12 +189,7 @@ class HttpSessionManager //reuse (healthy) HTTP sessions globally
 {
 public:
     explicit HttpSessionManager(const Zstring& caCertFilePath) :
-        caCertFilePath_(caCertFilePath),
-        sessionCleaner_([this]
-    {
-        setCurrentThreadName(Zstr("Session Cleaner[HTTP]"));
-        runGlobalSessionCleanUp(); //throw ThreadStopRequest
-    }) {}
+        caCertFilePath_(caCertFilePath) {}
 
     void access(const HttpSessionId& sessionId, const std::function<void(HttpSession& session)>& useHttpSession /*throw X*/) //throw SysError, X
     {
@@ -211,6 +206,8 @@ public:
                 /**/                    sessions.pop_back();
             }
         });
+
+        startGlobalSessionCleanUp();
 
         //create new HTTP session outside the lock: 1. don't block other threads 2. non-atomic regarding "sessionCache"! => one session too many is not a problem!
         if (!httpSession)
@@ -255,47 +252,55 @@ private:
     }
 
     //run a dedicated clean-up thread => it's unclear when the server let's a connection time out, so we do it preemptively
-    //context of worker thread:
-    void runGlobalSessionCleanUp() //throw ThreadStopRequest
+    void startGlobalSessionCleanUp()
     {
-        std::chrono::steady_clock::time_point lastCleanupTime;
-        for (;;)
+        static constinit std::once_flag onceStartThread; //=> no "magic static" code gen
+        std::call_once(onceStartThread, [this]
         {
-            const auto now = std::chrono::steady_clock::now();
-
-            if (now < lastCleanupTime + HTTP_SESSION_CLEANUP_INTERVAL)
-                interruptibleSleep(lastCleanupTime + HTTP_SESSION_CLEANUP_INTERVAL - now); //throw ThreadStopRequest
-
-            lastCleanupTime = std::chrono::steady_clock::now();
-
-            std::vector<Protected<HttpSessionCache>*> sessionCaches; //pointers remain stable, thanks to std::unordered_map<>
-
-            globalSessionCache_.access([&](GlobalHttpSessions& sessionsByCfg)
+            sessionCleaner_ = InterruptibleThread([this]
             {
-                for (auto& [sessionCfg, idleSession] : sessionsByCfg)
-                    sessionCaches.push_back(&idleSession);
-            });
+                setCurrentThreadName(Zstr("Session Cleaner[HTTP]"));
 
-            for (Protected<HttpSessionCache>* sessionCache : sessionCaches)
+                std::chrono::steady_clock::time_point lastCleanupTime;
                 for (;;)
                 {
-                    bool done = false;
-                    sessionCache->access([&](HttpSessionCache& sessions)
+                    const auto now = std::chrono::steady_clock::now();
+
+                    if (now < lastCleanupTime + HTTP_SESSION_CLEANUP_INTERVAL)
+                        interruptibleSleep(lastCleanupTime + HTTP_SESSION_CLEANUP_INTERVAL - now); //throw ThreadStopRequest
+
+                    lastCleanupTime = std::chrono::steady_clock::now();
+
+                    std::vector<Protected<HttpSessionCache>*> sessionCaches; //pointers remain stable, thanks to std::unordered_map<>
+
+                    globalSessionCache_.access([&](GlobalHttpSessions& sessionsByCfg)
                     {
-                        for (std::unique_ptr<HttpInitSession>& sshSession : sessions)
-                            if (!isHealthy(sshSession->session)) //!isHealthy() sessions are destroyed after use => in this context this means they have been idle for too long
-                            {
-                                sshSession.swap(sessions.back());
-                                /**/            sessions.pop_back(); //run ~HttpSession *inside* the lock! => avoid hitting server limits!
-                                return; //don't hold lock for too long: delete only one session at a time, then yield...
-                            }
-                        done = true;
+                        for (auto& [sessionCfg, idleSession] : sessionsByCfg)
+                            sessionCaches.push_back(&idleSession);
                     });
-                    if (done)
-                        break;
-                    std::this_thread::yield();
+
+                    for (Protected<HttpSessionCache>* sessionCache : sessionCaches)
+                        for (;;)
+                        {
+                            bool done = false;
+                            sessionCache->access([&](HttpSessionCache& sessions)
+                            {
+                                for (std::unique_ptr<HttpInitSession>& sshSession : sessions)
+                                    if (!isHealthy(sshSession->session)) //!isHealthy() sessions are destroyed after use => in this context this means they have been idle for too long
+                                    {
+                                        sshSession.swap(sessions.back());
+                                        /**/            sessions.pop_back(); //run ~HttpSession *inside* the lock! => avoid hitting server limits!
+                                        return; //don't hold lock for too long: delete only one session at a time, then yield...
+                                    }
+                                done = true;
+                            });
+                            if (done)
+                                break;
+                            std::this_thread::yield();
+                        }
                 }
-        }
+            });
+        });
     }
 
     using GlobalHttpSessions = std::unordered_map<HttpSessionId, Protected<HttpSessionCache>>;
@@ -1274,7 +1279,7 @@ void gdriveUnlinkParent(const std::string& itemId, const std::string& parentId, 
 
     JsonValue jresponse;
     try { jresponse = parseJson(response); /*throw JsonParsingError*/ }
-    catch (const JsonParsingError&) {}
+    catch (JsonParsingError&) {}
 
     const std::optional<std::string> id      = getPrimitiveFromJsonObject(jresponse, "id"); //id is returned on "success", unlike "parents", see below...
     const JsonValue*                 parents = getChildFromJsonObject(jresponse, "parents");
@@ -1308,7 +1313,7 @@ void gdriveMoveToTrash(const std::string& itemId, const GdriveAccess& access) //
 
     JsonValue jresponse;
     try { jresponse = parseJson(response); /*throw JsonParsingError*/ }
-    catch (const JsonParsingError&) {}
+    catch (JsonParsingError&) {}
 
     const std::optional<std::string> trashed = getPrimitiveFromJsonObject(jresponse, "trashed");
     if (!trashed || *trashed != "true")
@@ -1416,7 +1421,7 @@ std::string /*fileId*/ gdriveCopyFile(const std::string& fileId, const std::stri
 
     JsonValue jresponse;
     try { jresponse = parseJson(response); /*throw JsonParsingError*/ }
-    catch (const JsonParsingError&) {}
+    catch (JsonParsingError&) {}
 
     const std::optional<std::string> itemId = getPrimitiveFromJsonObject(jresponse, "id");
     if (!itemId)
@@ -1465,7 +1470,7 @@ void gdriveMoveAndRenameItem(const std::string& itemId, const std::string& paren
 
     JsonValue jresponse;
     try { jresponse = parseJson(response); /*throw JsonParsingError*/ }
-    catch (const JsonParsingError&) {}
+    catch (JsonParsingError&) {}
 
     const std::optional<std::string> name    = getPrimitiveFromJsonObject(jresponse, "name");
     const JsonValue*                 parents = getChildFromJsonObject(jresponse, "parents");
@@ -1503,7 +1508,7 @@ void setModTime(const std::string& itemId, time_t modTime, const GdriveAccess& a
 
     JsonValue jresponse;
     try { jresponse = parseJson(response); /*throw JsonParsingError*/ }
-    catch (const JsonParsingError&) {}
+    catch (JsonParsingError&) {}
 
     const std::optional<std::string> modifiedTime = getPrimitiveFromJsonObject(jresponse, "modifiedTime");
     if (!modifiedTime || *modifiedTime != modTimeRfc)
@@ -1895,7 +1900,7 @@ public:
             details.type     = readNumber<GdriveItemType>(stream); //
             details.owner    = readNumber     <FileOwner>(stream); //
             details.fileSize = readNumber      <uint64_t>(stream); //SysErrorUnexpectedEos
-            details.modTime  = static_cast<time_t>(readNumber<int64_t>(stream)); //
+            details.modTime  = readNumber       <int64_t>(stream); //
             details.targetId = readContainer<std::string>(stream); //
 
             size_t parentsCount = readNumber<uint32_t>(stream); //SysErrorUnexpectedEos

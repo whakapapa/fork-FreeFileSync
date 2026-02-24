@@ -157,7 +157,9 @@ std::weak_ordering zen::compareNativePath(const Zstring& lhs, const Zstring& rhs
 
 namespace
 {
-    constinit Global<std::unordered_map<Zstring, Zstring>> globalEnvVars;
+    constinit Global<const std::unordered_map<Zstring, Zstring>> globalEnvVars;
+    GLOBAL_RUN_ONCE(getEnvironmentVar("")); //ensure init happens during static construction at the latest (=> very likely on main thread)
+    //                                        so that accessing environ/_NSGetEnviron should be thread-safe
 }
 
 
@@ -169,7 +171,7 @@ std::optional<Zstring> zen::getEnvironmentVar(const ZstringView name)
         getenv_s() to the rescue!? not implemented on GCC, apparently *still* not threadsafe!!!
 
         => *eff* this: make a global copy during start up! */
-    globalEnvVars.setOnce([]
+    globalEnvVars.setOnce([] //don't just rely on GLOBAL_RUN_ONCE: allow calling this function at ANY time during static initialization
     {
         assert(runningOnMainThread());
 
@@ -179,13 +181,13 @@ std::optional<Zstring> zen::getEnvironmentVar(const ZstringView name)
             {
                 const std::string_view l(*line);
                 envVars->emplace(beforeFirst(l, '=', IfNotFoundReturn::all),
-                                 afterFirst(l, '=', IfNotFoundReturn::none));
+                                 afterFirst (l, '=', IfNotFoundReturn::none));
             }
 
         return envVars;
     });
 
-    if (std::shared_ptr<std::unordered_map<Zstring, Zstring>> envVars = globalEnvVars.get())
+    if (auto envVars = globalEnvVars.get())
     {
         if (const auto it = envVars->find(name);
             it != envVars->end())

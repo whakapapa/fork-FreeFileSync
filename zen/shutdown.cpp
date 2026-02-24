@@ -96,8 +96,7 @@ void zen::onSystemShutdownRunTasks()
     assert(tasks);
     if (tasks)
         for (const std::weak_ptr<const std::function<void()>>& taskWeak : *tasks)
-            if (const std::shared_ptr<const std::function<void()>>& task = taskWeak.lock();
-                task)
+            if (const std::shared_ptr<const std::function<void()>>& task = taskWeak.lock())
                 try
                 { (*task)(); }
                 catch (...) { assert(false); }

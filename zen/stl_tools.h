@@ -80,7 +80,7 @@ void mergeTraversal(Iterator first1, Iterator last1,
                     Iterator first2, Iterator last2,
                     FunctionLeftOnly lo, FunctionBoth bo, FunctionRightOnly ro, Compare compare);
 
-//why, oh why is there no std::optional<T>::get()???
+//why TF is there no std::optional<T>::get()???
 template <class T> inline       T* get(      std::optional<T>& opt) { return opt ? &*opt : nullptr; }
 template <class T> inline const T* get(const std::optional<T>& opt) { return opt ? &*opt : nullptr; }
 

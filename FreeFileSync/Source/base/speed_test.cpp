@@ -41,7 +41,7 @@ std::optional<double> SpeedTest::getRemainingSec(int /*itemsRemaining*/, int64_t
 
         //"items" counts logical operations *NOT* disk accesses, so we better play safe and use "bytes" only!
 
-        if (bytesDelta != 0) //sign(dataRemaining) != sign(bytesDelta) usually an error, so show it!
+        if (bytesDelta != 0) //sign(bytesRemaining) != sign(bytesDelta)? usually an error, so show it!
             return bytesRemaining * timeDelta / bytesDelta;
     }
     return std::nullopt;

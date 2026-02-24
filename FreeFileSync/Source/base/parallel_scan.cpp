@@ -136,7 +136,7 @@ public:
 
     void notifyTaskBegin(int threadIdx, size_t parallelOps)
     {
-        assert(!zen::runningOnMainThread());
+        assert(!runningOnMainThread());
         std::lock_guard dummy(lockCurrentStatus_);
 
         [[maybe_unused]] const auto [it, inserted] = activeThreadIdxs_.emplace(threadIdx, parallelOps);
@@ -147,7 +147,7 @@ public:
 
     void notifyTaskEnd(int threadIdx)
     {
-        assert(!zen::runningOnMainThread());
+        assert(!runningOnMainThread());
         {
             std::lock_guard dummy(lockCurrentStatus_);
 

@@ -17,21 +17,6 @@ namespace fff
 {
 struct FolderPairCfg
 {
-    FolderPairCfg(const Zstring& folderPathPhraseLeft,
-                  const Zstring& folderPathPhraseRight,
-                  CompareVariant cmpVar,
-                  SymLinkHandling handleSymlinksIn,
-                  const std::vector<unsigned int>& ignoreTimeShiftMinutesIn,
-                  const NormalizedFilter& filterIn,
-                  const SyncDirectionConfig& directCfg) :
-        folderPathPhraseLeft_ (folderPathPhraseLeft),
-        folderPathPhraseRight_(folderPathPhraseRight),
-        compareVar(cmpVar),
-        handleSymlinks(handleSymlinksIn),
-        ignoreTimeShiftMinutes(ignoreTimeShiftMinutesIn),
-        filter(filterIn),
-        directionCfg(directCfg) {}
-
     Zstring folderPathPhraseLeft_;  //unresolved directory names as entered by user!
     Zstring folderPathPhraseRight_; //
 

@@ -48,7 +48,7 @@ class HasConversion
     static  No& hasConversion(...);
 
 public:
-    enum { value = sizeof(hasConversion(std::declval<S>().c_str())) == sizeof(Yes) };
+    static constexpr bool value = sizeof(hasConversion(std::declval<S>().c_str())) == sizeof(Yes);
 };
 
 
@@ -90,20 +90,14 @@ class StringTraits
     using UndecoratedType = std::remove_cv_t     <NonPtrType>; //handle "const char* const"
 
 public:
-    enum
-    {
-        isStringClass = hasMemberType_value_type<CleanType>&&
-                        hasMember_c_str         <CleanType>&&
-                        hasMember_length        <CleanType>
-    };
+    static constexpr bool isStringClass = hasMemberType_value_type<CleanType> &&
+                                          hasMember_c_str         <CleanType> &&
+                                          hasMember_length        <CleanType>;
 
     using CharType = typename GetCharTypeImpl<UndecoratedType, isStringClass>::Type;
 
-    enum
-    {
-        isStringLike = std::is_same_v<CharType, char> ||
-        std::is_same_v<CharType, wchar_t>
-    };
+    static constexpr bool isStringLike = std::is_same_v<CharType, char> ||
+                                         std::is_same_v<CharType, wchar_t>;
 };
 }
 
@@ -171,7 +165,7 @@ template <class S> inline
 auto strBegin(S&& str)
 {
     static_assert(isStringLike<S>);
-    return impl::strBegin(std::forward<S>(str));
+    return impl::strBegin(str);
 }
 
 
@@ -179,7 +173,7 @@ template <class S> inline
 size_t strLength(S&& str)
 {
     static_assert(isStringLike<S>);
-    return impl::strLength(std::forward<S>(str));
+    return impl::strLength(str);
 }
 }
 

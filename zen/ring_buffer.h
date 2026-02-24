@@ -87,8 +87,8 @@ public:
 
         const size_t frontSize = std::min(size_, capacity_ - bufStart_);
 
-        std::destroy(getBufPtr() + bufStart_, getBufPtr() + bufStart_ + frontSize);
-        std::destroy(getBufPtr(), getBufPtr() + size_ - frontSize);
+        std::destroy_n(getBufPtr() + bufStart_, frontSize);
+        std::destroy_n(getBufPtr(), size_ - frontSize);
         bufStart_ = size_ = 0;
     }
 
@@ -101,9 +101,9 @@ public:
         const size_t endPos = getBufPos(size_);
         const size_t tailSize = std::min(len, capacity_ - endPos);
 
-        std::uninitialized_copy(first, first + tailSize, getBufPtr() + endPos); //throw ?
-        ZEN_ON_SCOPE_FAIL(std::destroy(first, first + tailSize));
-        std::uninitialized_copy(first + tailSize, last, getBufPtr()); //throw ?
+        std::uninitialized_copy_n(first, tailSize, getBufPtr() + endPos); //throw ?
+        ZEN_ON_SCOPE_FAIL(std::destroy_n(getBufPtr() + endPos, tailSize));
+        std::uninitialized_copy_n(first + tailSize, len - tailSize, getBufPtr()); //throw ?
 
         size_ += len;
     }
@@ -118,11 +118,11 @@ public:
 
         const size_t frontSize = std::min(len, capacity_ - bufStart_);
 
-        auto itTrg = std::copy(getBufPtr() + bufStart_, getBufPtr() + bufStart_ + frontSize, first); //throw ?
-        /**/         std::copy(getBufPtr(), getBufPtr() + len - frontSize, itTrg);                   //
+        auto itTrg = std::copy_n(getBufPtr() + bufStart_, frontSize, first); //throw ?
+        /**/         std::copy_n(getBufPtr(), len - frontSize, itTrg);       //
 
-        std::destroy(getBufPtr() + bufStart_, getBufPtr() + bufStart_ + frontSize);
-        std::destroy(getBufPtr(), getBufPtr() + len - frontSize);
+        std::destroy_n(getBufPtr() + bufStart_, frontSize);
+        std::destroy_n(getBufPtr(), len - frontSize);
 
         size_ -= len;
 
@@ -154,9 +154,9 @@ public:
 
             const size_t frontSize = std::min(size_, capacity_ - bufStart_);
 
-            itTrg = uninitializedMoveIfNoexcept(getBufPtr() + bufStart_, getBufPtr() + bufStart_ + frontSize, itTrg); //throw ?
+            itTrg = uninitializedMoveNIfNoexcept(getBufPtr() + bufStart_, frontSize, itTrg); //throw ?
             newBuf.size_ = frontSize; //pass ownership
-            /**/    uninitializedMoveIfNoexcept(getBufPtr(), getBufPtr() + size_ - frontSize, itTrg); //throw ?
+            /**/    uninitializedMoveNIfNoexcept(getBufPtr(), size_ - frontSize, itTrg); //throw ?
             newBuf.size_ = size_;     //
 
             newBuf.swap(*this);
@@ -221,12 +221,13 @@ private:
     const T* getBufPtr() const { return reinterpret_cast<T*>(rawMem_.get()); }
 
     //unlike pure std::uninitialized_move, this one allows for strong exception-safety!
-    static T* uninitializedMoveIfNoexcept(T* first, T* last, T* firstTrg)
+    static T* uninitializedMoveNIfNoexcept(T* first, size_t count, T* firstTrg)
     {
-        return uninitializedMoveIfNoexcept(first, last, firstTrg, std::is_nothrow_move_constructible<T>());
+        if constexpr (std::is_nothrow_move_constructible<T>())
+            return std::uninitialized_move_n(first, count, firstTrg).second;
+        else
+            return std::uninitialized_copy_n(first, count, firstTrg); //throw ?
     }
-    static T* uninitializedMoveIfNoexcept(T* first, T* last, T* firstTrg, std::true_type ) { return std::uninitialized_move(first, last, firstTrg); }
-    static T* uninitializedMoveIfNoexcept(T* first, T* last, T* firstTrg, std::false_type) { return std::uninitialized_copy(first, last, firstTrg); } //throw ?
 
     size_t getBufPos(size_t offset) const
     {

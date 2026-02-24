@@ -82,7 +82,7 @@ public:
             it->second->value = std::move(attrValue);
         else
         {
-            attributes_.emplace_back(std::move(name), std::move(attrValue)); 
+            attributes_.emplace_back(std::move(name), std::move(attrValue));
             attributesByName_.emplace(attributes_.back().name, --attributes_.end());
         }
         static_assert(std::is_same_v<decltype(attributes_), std::list<Attribute>>); //must NOT invalidate references used in "attributesByName_"!

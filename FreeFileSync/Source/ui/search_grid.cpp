@@ -14,36 +14,22 @@ using namespace fff;
 
 namespace
 {
-template <bool respectCase>
-void normalizeForSearch(std::wstring& str);
-
-template <> inline
-void normalizeForSearch<true /*respectCase*/>(std::wstring& str)
+template <bool respectCase> inline
+void normalizeForSearch(std::wstring& str)
 {
     for (wchar_t& c : str)
         if (!isAsciiChar(c))
         {
-            str = utfTo<std::wstring>(getUnicodeNormalForm(utfTo<Zstring>(str)));
+            if constexpr (respectCase)
+                str = utfTo<std::wstring>(getUnicodeNormalForm(utfTo<Zstring>(str)));
+            else
+                str = utfTo<std::wstring>(getUpperCase(utfTo<Zstring>(str))); //getUnicodeNormalForm() is implied by getUpperCase()
             replace(str, L'\\', L'/');
             return;
         }
         else if (c == L'\\')
             c = L'/';
-}
-
-template <> inline
-void normalizeForSearch<false /*respectCase*/>(std::wstring& str)
-{
-    for (wchar_t& c : str)
-        if (!isAsciiChar(c))
-        {
-            str = utfTo<std::wstring>(getUpperCase(utfTo<Zstring>(str))); //getUnicodeNormalForm() is implied by getUpperCase()
-            replace(str, L'\\', L'/');
-            return;
-        }
-        else if (c == L'\\')
-            c = L'/';
-        else
+        else if constexpr (!respectCase)
             c = asciiToUpper(c); //caveat, decomposed Unicode form! c might be followed by combining character! Still, should be fine...
 }
 

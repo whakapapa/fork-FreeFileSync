@@ -33,6 +33,7 @@ using namespace zen;
 using namespace fff;
 
 
+#ifdef __WXGTK3__
     /* Wayland backend used by GTK3 does not allow to move windows!
 
     "I'd really like to know if there is some deep technical reason for it or
@@ -42,6 +43,7 @@ using namespace fff;
 
     => workaround: https://docs.gtk.org/gdk3/func.set_allowed_backends.html           */
     GLOBAL_RUN_ONCE(::gdk_set_allowed_backends("x11,*")); //call *before* gtk_init()
+#endif
 
 IMPLEMENT_APP(Application)
 
@@ -390,7 +392,7 @@ void Application::onEnterEventLoop()
             try
             {
                 bool cfgFileExists = true;
-                try { cfgFileExists  = itemExists(globalCfgFilePath); /*throw FileError*/ } //=> unclear which exception is more relevant/useless:
+                try { cfgFileExists = itemExists(globalCfgFilePath); /*throw FileError*/ } //=> unclear which exception is more relevant/useless:
                 catch (const FileError& e2) { throw FileError(replaceCpy(e.toString(), L"\n\n", L'\n'), replaceCpy(e2.toString(), L"\n\n", L'\n')); }
 
                 if (cfgFileExists)
@@ -474,7 +476,7 @@ void Application::runBatchMode(const FfsBatchConfig& batchCfg, const Zstring& cf
 
     const std::chrono::system_clock::time_point syncStartTime = std::chrono::system_clock::now();
 
-    const WindowLayout::Dimensions progressDim
+    const WindowLayout::Rect progDlgRect
     {
         globalCfg.dpiLayouts[getDpiScalePercent()].progressDlg.size,
         std::nullopt /*pos*/,
@@ -490,7 +492,7 @@ void Application::runBatchMode(const FfsBatchConfig& batchCfg, const Zstring& cf
                                      batchCfg.guiCfg.mainCfg.autoRetryDelay,
                                      globalCfg.soundFileSyncFinished,
                                      globalCfg.soundFileAlertPending,
-                                     progressDim,
+                                     progDlgRect,
                                      batchCfg.batchExCfg.autoCloseSummary,
                                      batchCfg.batchExCfg.postBatchAction,
                                      batchCfg.batchExCfg.batchErrorHandling);
@@ -656,8 +658,8 @@ void Application::runBatchMode(const FfsBatchConfig& batchCfg, const Zstring& cf
     //---------------------------------------------------------------------------
     const BatchStatusHandler::DlgOptions dlgOpt = statusHandler.showResult();
 
-    globalCfg.dpiLayouts[getDpiScalePercent()].progressDlg.size        = dlgOpt.dim.size; //=> ignore dim.pos
-    globalCfg.dpiLayouts[getDpiScalePercent()].progressDlg.isMaximized = dlgOpt.dim.isMaximized;
+    globalCfg.dpiLayouts[getDpiScalePercent()].progressDlg.size        = dlgOpt.dlgRect.size; //=> ignore dlgOpt.pos
+    globalCfg.dpiLayouts[getDpiScalePercent()].progressDlg.isMaximized = dlgOpt.dlgRect.isMaximized;
 
     //----------------------------------------------------------------------
     switch (r.summary.result)

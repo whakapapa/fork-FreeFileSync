@@ -43,5 +43,5 @@ void fff::delayAndCountDown(std::chrono::nanoseconds delay, const std::function<
             delay -= UI_UPDATE_INTERVAL / 2; //support "Pause" => don't count time spent in notifyStatus()!
         }
     else
-        std::this_thread::sleep_for(delay /*may be negative*/);
+        std::this_thread::sleep_for(delay /*skips sleep if negative*/);
 }

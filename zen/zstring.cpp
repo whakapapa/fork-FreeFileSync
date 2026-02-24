@@ -5,7 +5,6 @@
 // *****************************************************************************
 
 #include "zstring.h"
-    //#include <glib.h>
     #include "sys_error.h"
 
 using namespace zen;

@@ -10,11 +10,10 @@
 #include <wx/wupdlock.h>
 #include <wx/valtext.h>
 #include <wx+/rtl.h>
-#include <wx+/no_flicker.h>
 #include <wx+/context_menu.h>
 #include <wx+/choice_enum.h>
 #include <wx+/image_tools.h>
-#include <wx+/window_layout.h>
+#include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
 #include "gui_generated.h"
@@ -51,7 +50,7 @@ void initBitmapRadioButtons(const std::vector<std::pair<ToggleButton*, std::stri
 
         if (imgName == "delete_recycler") //use system icon if available (can fail on Linux??)
             try { imgIco = extractWxImage(fff::getTrashIcon(dipToScreen(getMenuIconDipSize()))); /*throw SysError*/ }
-            catch (SysError&) { assert(false); }
+            catch ([[maybe_unused]] const SysError& e) { assert(false); }
 
         if (!selected)
             imgIco = greyScale(imgIco);
@@ -588,8 +587,8 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
     const int scrollDelta = GetCharHeight();
     m_scrolledWindowPerf->SetScrollRate(scrollDelta, scrollDelta);
 
-    setDefaultWidth(*m_spinCtrlAutoRetryCount);
-    setDefaultWidth(*m_spinCtrlAutoRetryDelay);
+    fixSpinCtrl(*m_spinCtrlAutoRetryCount);
+    fixSpinCtrl(*m_spinCtrlAutoRetryDelay);
 
     //ignore invalid input for time shift control:
     wxTextValidator inputValidator(wxFILTER_DIGITS | wxFILTER_INCLUDE_CHAR_LIST);
@@ -601,9 +600,9 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
 
     assert(!contains(m_buttonClear->GetLabel(), L"&C") && !contains(m_buttonClear->GetLabel(), L"&c")); //gazillionth wxWidgets bug on OS X: Command + C mistakenly hits "&C" access key!
 
-    setDefaultWidth(*m_spinCtrlMinSize);
-    setDefaultWidth(*m_spinCtrlMaxSize);
-    setDefaultWidth(*m_spinCtrlTimespan);
+    fixSpinCtrl(*m_spinCtrlMinSize);
+    fixSpinCtrl(*m_spinCtrlMaxSize);
+    fixSpinCtrl(*m_spinCtrlTimespan);
 
     setImage(*m_bpButtonDefaultContext, mirrorIfRtl(loadImage("button_arrow_right")));
 
@@ -646,9 +645,9 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
         {m_buttonVersioning, "delete_versioning" },
     }, true /*alignLeft*/);
 
-    setDefaultWidth(*m_spinCtrlVersionMaxDays );
-    setDefaultWidth(*m_spinCtrlVersionCountMin);
-    setDefaultWidth(*m_spinCtrlVersionCountMax);
+    fixSpinCtrl(*m_spinCtrlVersionMaxDays );
+    fixSpinCtrl(*m_spinCtrlVersionCountMin);
+    fixSpinCtrl(*m_spinCtrlVersionCountMax);
 
     m_versioningFolderPath->setHistory(std::make_shared<HistoryList>(versioningFolderHistory, folderHistoryMax));
 
@@ -656,7 +655,7 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
     const wxImage imgFileManagerSmall_([]
     {
         try { return extractWxImage(fff::getFileManagerIcon(dipToScreen(20))); /*throw SysError*/ }
-        catch (SysError&) { assert(false); return loadImage("file_manager", dipToScreen(20)); }
+        catch ([[maybe_unused]] const SysError& e) { assert(false); return loadImage("file_manager", dipToScreen(20)); }
     }());
     setImage(*m_bpButtonShowLogFolder, imgFileManagerSmall_);
     m_bpButtonShowLogFolder->SetToolTip(translate(extCommandFileManager.description));//translate default external apps on the fly: "Show in Explorer"
@@ -718,9 +717,10 @@ globalLogFolderPhrase_(globalLogFolderPhrase)
     selectFolderPairConfig(-1);
 
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     //keep stable sizer height: change-based directions are taller than difference-based ones => init with SyncVariant::twoWay
@@ -1351,7 +1351,7 @@ void ConfigDialog::updateSyncGui()
             wxImage imgTrash = loadImage("delete_recycler");
             //use system icon if available (can fail on Linux??)
             try { imgTrash = extractWxImage(fff::getTrashIcon(imgTrash.GetHeight())); /*throw SysError*/ }
-            catch (SysError&) { assert(false); }
+            catch ([[maybe_unused]] const SysError& e) { assert(false); }
 
             setImage(*m_bitmapDeletionType, greyScaleIfDisabled(imgTrash, syncOptionsEnabled));
             setText(*m_staticTextDeletionTypeDescription, _("Retain deleted and overwritten files in the recycle bin"));
@@ -1484,7 +1484,7 @@ void ConfigDialog::setMiscSyncOptions(const MiscSyncConfig& miscCfg)
         for (int i = 0; i < rowsToCreate; ++i)
         {
             wxSpinCtrl* spinCtrlParallelOps = new wxSpinCtrl(m_scrolledWindowPerf, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, 1, 2000'000'000, 1);
-            setDefaultWidth(*spinCtrlParallelOps);
+            fixSpinCtrl(*spinCtrlParallelOps);
             spinCtrlParallelOps->Enable(enableExtraFeatures_);
             fgSizerPerf->Add(spinCtrlParallelOps, 0, wxALIGN_CENTER_VERTICAL);
 

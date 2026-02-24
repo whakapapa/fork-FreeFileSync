@@ -45,8 +45,9 @@ void NameFilter::parseFilterPhrase(const Zstring& filterPhrase, FilterSet& filte
             filter.folderMasks.insert(Zstring(beforeLast(phrase, FILE_NAME_SEPARATOR, IfNotFoundReturn::none)));
         else
         {
-            filter.fileMasks  .insert(Zstring(phrase));
-            filter.folderMasks.insert(Zstring(phrase));
+            Zstring phrase2(phrase); //ref-count! :>
+            filter.fileMasks  .insert(phrase2);
+            filter.folderMasks.insert(phrase2);
         }
     };
 
@@ -103,14 +104,14 @@ void NameFilter::MaskMatcher::insert(const Zstring& mask)
     else
     {
         relPaths_   .insert(mask);
-        relPathsCmp_.insert(mask); //little memory wasted thanks to COW string!
+        relPathsCmp_.insert(mask); //no memory wasted thanks to ref-counting string!
     }
 }
 
 
 namespace
 {
-//"true" if path or any parent path matches the mask
+template <bool allowParentMatch>
 bool matchesMask(const Zchar* path, const Zchar* const pathEnd, const Zchar* mask /*0-terminated*/)
 {
     for (;; ++mask, ++path)
@@ -119,7 +120,10 @@ bool matchesMask(const Zchar* path, const Zchar* const pathEnd, const Zchar* mas
         switch (m)
         {
             case 0:
-                return path == pathEnd || *path == FILE_NAME_SEPARATOR; //"full" or parent path match
+                if constexpr (allowParentMatch)
+                    return path == pathEnd || *path == FILE_NAME_SEPARATOR; //"full" or parent path match
+                else
+                    return path == pathEnd;
 
             case Zstr('?'): //should not match FILE_NAME_SEPARATOR
                 if (path == pathEnd || *path == FILE_NAME_SEPARATOR)
@@ -141,13 +145,13 @@ bool matchesMask(const Zchar* path, const Zchar* const pathEnd, const Zchar* mas
                 {
                     while (path != pathEnd)
                         if (*path++ != FILE_NAME_SEPARATOR)
-                            if (matchesMask(path, pathEnd, mask))
+                            if (matchesMask<allowParentMatch>(path, pathEnd, mask))
                                 return true;
                 }
                 else //*[letter or /] pattern
                     while (path != pathEnd)
                         if (*path++ == m)
-                            if (matchesMask(path, pathEnd, mask))
+                            if (matchesMask<allowParentMatch>(path, pathEnd, mask))
                                 return true;
                 return false;
 
@@ -160,65 +164,40 @@ bool matchesMask(const Zchar* path, const Zchar* const pathEnd, const Zchar* mas
 
 
 //"true" if path matches (only!) the beginning of mask
-template <bool haveWildcards> bool matchesMaskBegin(const ZstringView relPath, const Zstring& mask);
-
-template <> inline
-bool matchesMaskBegin<true /*haveWildcards*/>(const ZstringView relPath, const Zstring& mask)
+template <bool haveWildcards> inline
+bool matchesMaskBegin(const ZstringView relPath, const Zstring& mask)
 {
-    auto itP = relPath.begin();
-    for (auto itM = mask.begin(); itM != mask.end(); ++itM, ++itP)
+    if constexpr (haveWildcards)
     {
-        const Zchar m = *itM;
-        switch (m)
+        auto itP = relPath.begin();
+        for (auto itM = mask.begin(); itM != mask.end(); ++itM, ++itP)
         {
-            case Zstr('?'):
-                if (itP == relPath.end() || *itP == FILE_NAME_SEPARATOR)
-                    return false;
-                break;
+            const Zchar m = *itM;
+            switch (m)
+            {
+                case Zstr('?'):
+                    if (itP == relPath.end() || *itP == FILE_NAME_SEPARATOR)
+                        return false;
+                    break;
 
-            case Zstr('*'):
-                return true;
+                case Zstr('*'):
+                    return true;
 
-            default:
-                if (itP == relPath.end())
-                    return m == FILE_NAME_SEPARATOR && mask.end() - itM > 1; //require strict sub match
+                default:
+                    if (itP == relPath.end())
+                        return m == FILE_NAME_SEPARATOR && mask.end() - itM > 1; //require strict sub match
 
-                if (*itP != m)
-                    return false;
+                    if (*itP != m)
+                        return false;
+            }
         }
+        return false; //not a strict sub match
     }
-    return false; //not a strict sub match
+    else //perf: going overboard? remaining fruits are hanging higher and higher...
+        return mask.size() > relPath.size() + 1 && //room for FILE_NAME_SEPARATOR *and* at least one more char
+               mask[relPath.size()] == FILE_NAME_SEPARATOR &&
+               std::equal(relPath.begin(), relPath.end(), mask.begin());
 }
-
-template <> inline //perf: going overboard? remaining fruits are hanging higher and higher...
-bool matchesMaskBegin<false /*haveWildcards*/>(const ZstringView relPath, const Zstring& mask)
-{
-    return mask.size() > relPath.size() + 1 && //room for FILE_NAME_SEPARATOR *and* at least one more char
-           mask[relPath.size()] == FILE_NAME_SEPARATOR &&
-           startsWith(mask, relPath);
-}
-}
-
-
-bool NameFilter::MaskMatcher::matches(const ZstringView relPath) const
-{
-    assert(!relPath.empty());
-
-    if (std::any_of(realMasks_.begin(), realMasks_.end(), [&](const Zstring& mask) { return matchesMask(relPath.data(), relPath.data() + relPath.size(), mask.c_str()); }))
-    /**/return true;
-
-    //perf: for relPaths_ we can go from linear to *constant* time!!! => annihilates https://freefilesync.org/forum/viewtopic.php?t=7768#p26519
-
-    ZstringView parentPath = relPath;
-    for (;;) //check all parent paths!
-    {
-        if (relPaths_.contains(parentPath)) //heterogenous lookup!
-            return true;
-
-        parentPath = beforeLast(parentPath, FILE_NAME_SEPARATOR, IfNotFoundReturn::none);
-        if (parentPath.empty())
-            return false;
-    }
 }
 
 
@@ -226,6 +205,35 @@ bool NameFilter::MaskMatcher::matchesBegin(const ZstringView relPath) const
 {
     return std::any_of(realMasks_.begin(), realMasks_.end(), [&](const Zstring& mask) { return matchesMaskBegin<true  /*haveWildcards*/>(relPath, mask); }) ||
     /**/   std::any_of(relPaths_ .begin(), relPaths_ .end(), [&](const Zstring& mask) { return matchesMaskBegin<false /*haveWildcards*/>(relPath, mask); });
+}
+
+
+template <bool allowParentMatch>
+bool NameFilter::MaskMatcher::matches(const ZstringView relPath) const
+{
+    assert(!relPath.empty());
+
+    if (std::any_of(realMasks_.begin(), realMasks_.end(),
+    /**/[&](const Zstring& mask) { return matchesMask<allowParentMatch>(relPath.data(), relPath.data() + relPath.size(), mask.c_str()); }))
+    /**/return true;
+
+    //perf: for relPaths_ we can go from linear to *constant* time!!! => annihilates https://freefilesync.org/forum/viewtopic.php?t=7768#p26519
+
+    if constexpr (allowParentMatch)
+    {
+        ZstringView parentPath = relPath;
+        for (;;)
+        {
+            if (relPaths_.contains(parentPath)) //heterogenous lookup!
+                return true;
+
+            parentPath = beforeLast(parentPath, FILE_NAME_SEPARATOR, IfNotFoundReturn::none);
+            if (parentPath.empty())
+                return false;
+        }
+    }
+    else
+        return relPaths_.contains(relPath);
 }
 
 //#################################################################################################
@@ -252,12 +260,12 @@ bool NameFilter::passFileFilter(const Zstring& relFilePath) const
 
     const ZstringView parentPath = beforeLast<ZstringView>(pathFmt, FILE_NAME_SEPARATOR, IfNotFoundReturn::none);
 
-    if (excludeFilter.fileMasks.matches(pathFmt) || //either match on file or any parent folder
-        (!parentPath.empty() && excludeFilter.folderMasks.matches(parentPath))) //match on any parent folder only
+    if (excludeFilter.fileMasks.matches<false /*allowParentMatch*/>(pathFmt) || //either match on file or any parent folder
+        (!parentPath.empty() && excludeFilter.folderMasks.matches<true /*allowParentMatch*/>(parentPath))) //match on any parent folder only
         return false;
 
-    return includeFilter.fileMasks.matches(pathFmt) ||
-           (!parentPath.empty() && includeFilter.folderMasks.matches(parentPath));
+    return includeFilter.fileMasks.matches<false /*allowParentMatch*/>(pathFmt) ||
+           (!parentPath.empty() && includeFilter.folderMasks.matches<true /*allowParentMatch*/>(parentPath));
 }
 
 
@@ -269,7 +277,7 @@ bool NameFilter::passDirFilter(const Zstring& relDirPath, bool* childItemMightMa
     //normalize input: 1. ignore Unicode normalization form 2. ignore case
     const Zstring& pathFmt = getUpperCase(relDirPath);
 
-    if (excludeFilter.folderMasks.matches(pathFmt))
+    if (excludeFilter.folderMasks.matches<true /*allowParentMatch*/>(pathFmt))
     {
         if (childItemMightMatch)
             *childItemMightMatch = false; //perf: no need to traverse deeper; subfolders/subfiles would be excluded by filter anyway!
@@ -281,7 +289,7 @@ bool NameFilter::passDirFilter(const Zstring& relDirPath, bool* childItemMightMa
         return false;
     }
 
-    if (includeFilter.folderMasks.matches(pathFmt))
+    if (includeFilter.folderMasks.matches<true /*allowParentMatch*/>(pathFmt))
         return true;
 
     if (childItemMightMatch)
@@ -293,8 +301,8 @@ bool NameFilter::passDirFilter(const Zstring& relDirPath, bool* childItemMightMa
 
 bool NameFilter::isNull(const Zstring& includePhrase, const Zstring& excludePhrase)
 {
-    return trimCpy(includePhrase) == Zstr("*") && //harmonize with ui/folder_pair.cpp tooltip
-           trimCpy(excludePhrase).empty();
+    return trimCpy<ZstringView>(includePhrase) == Zstr("*") && //harmonize with ui/folder_pair.cpp tooltip
+           trimCpy<ZstringView>(excludePhrase).empty();
     //return NameFilter(includePhrase, excludePhrase).isNull(); -> very expensive for huge lists
 }
 

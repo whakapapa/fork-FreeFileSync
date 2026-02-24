@@ -9,28 +9,41 @@
 
 #include <atomic>
 #include <memory>
-#include <cstdlib> //std::atexit (for macOS)
-#include <utility>
 #include "scope_guard.h"
-
 
 namespace zen
 {
 /*  Solve static destruction order fiasco by providing shared ownership and serialized access to global variables
 
     => e.g. accesses to "Global<T>::get()" during process shutdown: _("") used by message in debug_minidump.cpp or by some detached thread assembling an error message!
-    => use trivially-destructible POD only!!!
+    => use POD member variables only that (technically) can be accessed even *after* Global<> destruction!
 
-    ATTENTION: function-static globals have the compiler generate "magic statics" == compiler-genenerated locking code which will crash or leak memory when accessed after global is "dead"
-               => "solved" by FunStatGlobal, but we can't have "too many" of these...                  */
-class PodSpinMutex
+    ATTENTION: *never* place static Global<> in function scope! This will have the compiler generate "magic statics" due to non-trivial ~Global()!
+               => "magic" locking code will crash or leak memory when accessed after global shutdown */
+
+#define GLOBAL_RUN_ONCE(X)                               \
+    struct ZEN_CONCAT(GlobalInitializer, __LINE__)       \
+    {                                                    \
+        ZEN_CONCAT(GlobalInitializer, __LINE__)() { X; } \
+    } ZEN_CONCAT(globalInitializer, __LINE__)
+
+
+class PodMutex
 {
 public:
-    bool tryLock();
-    void lock();
-    void unlock();
-    bool isLocked();
+    bool tryLock() { return !flag_.test_and_set(std::memory_order_acquire); }
 
+    void lock()
+    {
+        while (!tryLock())
+            flag_.wait(true, std::memory_order_relaxed);
+    }
+
+    void unlock()
+    {
+        flag_.clear(std::memory_order_release);
+        flag_.notify_one();
+    }
 private:
     std::atomic_flag flag_{}; /* => avoid potential contention with worker thread during Global<> construction!
     - "For an atomic_flag with static storage duration, this guarantees static initialization:" => just what the doctor ordered!
@@ -40,270 +53,94 @@ private:
 };
 
 
-#define GLOBAL_RUN_ONCE(X)                               \
-    struct ZEN_CONCAT(GlobalInitializer, __LINE__)       \
-    {                                                    \
-        ZEN_CONCAT(GlobalInitializer, __LINE__)() { X; } \
-    } ZEN_CONCAT(globalInitializer, __LINE__)
+template <class T>
+class PodSharedPtr
+{
+public:
+    void construct(std::unique_ptr<T>&& newInst)
+    {
+        assert(!alive_);
+        new (rawMem_) std::shared_ptr<T>(std::move(newInst));
+        alive_ = true;
+    }
+    void destruct()
+    {
+        assert(alive_);
+        ref().~shared_ptr();
+        alive_ = false;
+    }
+
+    bool isAlive() const { return alive_; }
+
+    std::shared_ptr<T>& ref() { assert(alive_); return *reinterpret_cast<std::shared_ptr<T>*>(rawMem_); }
+
+private:
+    alignas(std::shared_ptr<T>) std::byte rawMem_[sizeof(std::shared_ptr<T>)] = {};
+    bool alive_ = false; //placing *after* rawMem_ avoids: "warning C4324: 'PodSharedPtr<T>': structure was padded due to alignment specifier"
+};
 
 
 template <class T>
 class Global //don't use for function-scope statics!
 {
 public:
-    consteval Global() {}; //demand static zero-initialization!
+    consteval Global() {}; //demand static initialization!
 
     ~Global()
     {
-        static_assert(std::is_trivially_destructible_v<Pod>, "this memory needs to live forever");
+        spinLock_.lock();
+        globalShutdown_ = true;
+        spinLock_.unlock();
 
-        pod_.spinLock.lock();
-        std::shared_ptr<T>* oldInst = std::exchange(pod_.inst, nullptr);
-        pod_.destroyed = true;
-        pod_.spinLock.unlock();
-
-        delete oldInst;
+        if (ptr_.isAlive())  //careful: no ptr_ access after "globalShutdown_"! otherwise: race-condition!
+            ptr_.destruct(); //
     }
 
     std::shared_ptr<T> get() //=> return std::shared_ptr to let instance life time be handled by caller (MT usage!)
     {
-        pod_.spinLock.lock();
-        ZEN_ON_SCOPE_EXIT(pod_.spinLock.unlock());
+        spinLock_.lock();
+        ZEN_ON_SCOPE_EXIT(spinLock_.unlock());
 
-        if (pod_.inst)
-            return *pod_.inst;
+        if (!globalShutdown_ && ptr_.isAlive())
+            return ptr_.ref();
         return nullptr;
     }
 
     void set(std::unique_ptr<T>&& newInst)
     {
-        std::shared_ptr<T>* tmpInst = nullptr;
-        if (newInst)
-            tmpInst = new std::shared_ptr<T>(std::move(newInst));
+        spinLock_.lock();
+        ZEN_ON_SCOPE_EXIT(spinLock_.unlock());
+
+        assert(!globalShutdown_);
+        if (!globalShutdown_)
         {
-            pod_.spinLock.lock();
-            ZEN_ON_SCOPE_EXIT(pod_.spinLock.unlock());
-
-            if (!pod_.destroyed)
-                std::swap(pod_.inst, tmpInst);
+            if (ptr_.isAlive())
+                ptr_.ref() = std::move(newInst);
             else
-                assert(false);
-
-            pod_.initialized = true;
+                ptr_.construct(std::move(newInst));
         }
-        delete tmpInst;
     }
 
     //for initialization via a frequently-called function (which may be running on parallel threads)
     template <class Function>
-    void setOnce(Function getInitialValue /*-> std::unique_ptr<T>*/)
+    void setOnce(Function&& getInitialValue /*-> std::unique_ptr<T>*/)
     {
-        pod_.spinLock.lock();
-        ZEN_ON_SCOPE_EXIT(pod_.spinLock.unlock());
+        spinLock_.lock();
+        ZEN_ON_SCOPE_EXIT(spinLock_.unlock());
 
-        if (!pod_.initialized)
-        {
-            assert(!pod_.inst);
-            if (!pod_.destroyed)
-            {
-                if (std::unique_ptr<T> newInst = getInitialValue()) //throw ?
-                    pod_.inst = new std::shared_ptr<T>(std::move(newInst));
-            }
-            else
-                assert(false);
-
-            pod_.initialized = true;
-        }
+        assert(!globalShutdown_);
+        if (!globalShutdown_ && !ptr_.isAlive())
+            ptr_.construct(getInitialValue()); //throw ?
     }
 
 private:
-    struct Pod
-    {
-        PodSpinMutex spinLock; //rely entirely on static zero-initialization! => avoid potential contention with worker thread during Global<> construction!
-        //serialize access: can't use std::mutex: has non-trival destructor
-        std::shared_ptr<T>* inst = nullptr;
-        bool initialized = false;
-        bool destroyed = false;
-    } pod_;
+    static_assert(std::is_trivially_destructible_v<PodMutex> && //can't use std::mutex: has non-trival destructor
+                  std::is_trivially_destructible_v<PodSharedPtr<T>>, "this memory needs to live forever");
+
+    PodMutex spinLock_; //rely entirely on static zero-initialization! => avoid potential contention with worker thread during Global<> construction!
+    bool globalShutdown_ = false;
+    PodSharedPtr<T> ptr_;
 };
-
-//===================================================================================================================
-//===================================================================================================================
-
-struct CleanUpEntry
-{
-    using CleanUpFunction = void (*)(void* callbackData);
-    CleanUpFunction cleanUpFun   = nullptr;
-    void*           callbackData = nullptr;
-    CleanUpEntry*   prev         = nullptr;
-};
-void registerGlobalForDestruction(CleanUpEntry& entry);
-
-
-template <class T>
-class FunStatGlobal
-{
-public:
-    consteval FunStatGlobal() {}; //demand static zero-initialization!
-
-    //No ~FunStatGlobal(): required to avoid generation of magic statics code for a function-scope static!
-
-    std::shared_ptr<T> get()
-    {
-        static_assert(std::is_trivially_destructible_v<FunStatGlobal>, "this class must not generate code for magic statics!");
-
-        pod_.spinLock.lock();
-        ZEN_ON_SCOPE_EXIT(pod_.spinLock.unlock());
-
-        if (pod_.inst)
-            return *pod_.inst;
-        return nullptr;
-    }
-
-    void set(std::unique_ptr<T>&& newInst)
-    {
-        std::shared_ptr<T>* tmpInst = nullptr;
-        if (newInst)
-            tmpInst = new std::shared_ptr<T>(std::move(newInst));
-        {
-            pod_.spinLock.lock();
-            ZEN_ON_SCOPE_EXIT(pod_.spinLock.unlock());
-
-            if (!pod_.destroyed)
-                std::swap(pod_.inst, tmpInst);
-            else
-                assert(false);
-
-            registerDestruction();
-        }
-        delete tmpInst;
-    }
-
-    template <class Function>
-    void setOnce(Function getInitialValue /*-> std::unique_ptr<T>*/)
-    {
-        pod_.spinLock.lock();
-        ZEN_ON_SCOPE_EXIT(pod_.spinLock.unlock());
-
-        if (!pod_.cleanUpEntry.cleanUpFun)
-        {
-            assert(!pod_.inst);
-            if (!pod_.destroyed)
-            {
-                if (std::unique_ptr<T> newInst = getInitialValue()) //throw ?
-                    pod_.inst = new std::shared_ptr<T>(std::move(newInst));
-            }
-            else
-                assert(false);
-
-            registerDestruction();
-        }
-    }
-
-private:
-    void destruct()
-    {
-        static_assert(std::is_trivially_destructible_v<Pod>, "this memory needs to live forever");
-
-        pod_.spinLock.lock();
-        std::shared_ptr<T>* oldInst = std::exchange(pod_.inst, nullptr);
-        pod_.destroyed = true;
-        pod_.spinLock.unlock();
-
-        delete oldInst;
-    }
-
-    //call while holding pod_.spinLock
-    void registerDestruction()
-    {
-        assert(pod_.spinLock.isLocked());
-
-        if (!pod_.cleanUpEntry.cleanUpFun)
-        {
-            pod_.cleanUpEntry.callbackData = this;
-            pod_.cleanUpEntry.cleanUpFun = [](void* callbackData)
-            {
-                static_cast<FunStatGlobal*>(callbackData)->destruct();
-            };
-
-            registerGlobalForDestruction(pod_.cleanUpEntry);
-        }
-    }
-
-    struct Pod
-    {
-        PodSpinMutex spinLock; //rely entirely on static zero-initialization! => avoid potential contention with worker thread during Global<> construction!
-        //serialize access; can't use std::mutex: has non-trival destructor
-        std::shared_ptr<T>* inst = nullptr;
-        CleanUpEntry cleanUpEntry;
-        bool destroyed = false;
-    } pod_;
-};
-
-
-inline
-void registerGlobalForDestruction(CleanUpEntry& entry)
-{
-    static struct
-    {
-        PodSpinMutex  spinLock;
-        CleanUpEntry* head = nullptr;
-    } cleanUpList;
-
-    static_assert(std::is_trivially_destructible_v<decltype(cleanUpList)>, "we must not generate code for magic statics!");
-
-    cleanUpList.spinLock.lock();
-    ZEN_ON_SCOPE_EXIT(cleanUpList.spinLock.unlock());
-
-    std::atexit([]
-    {
-        cleanUpList.spinLock.lock();
-        ZEN_ON_SCOPE_EXIT(cleanUpList.spinLock.unlock());
-
-        (*cleanUpList.head->cleanUpFun)(cleanUpList.head->callbackData);
-        cleanUpList.head = cleanUpList.head->prev; //nicely clean up in reverse order of construction
-    });
-
-    entry.prev = cleanUpList.head;
-    cleanUpList.head = &entry;
-
-}
-
-//------------------------------------------------------------------------------------------
-
-inline
-bool PodSpinMutex::tryLock()
-{
-    return !flag_.test_and_set(std::memory_order_acquire);
-}
-
-
-
-
-inline
-void PodSpinMutex::lock()
-{
-    while (!tryLock())
-        flag_.wait(true, std::memory_order_relaxed);
-}
-
-
-inline
-void PodSpinMutex::unlock()
-{
-    flag_.clear(std::memory_order_release);
-    flag_.notify_one();
-}
-
-
-inline
-bool PodSpinMutex::isLocked()
-{
-    if (!tryLock())
-        return true;
-    unlock();
-    return false;
-}
 }
 
 #endif //GLOBALS_H_8013740213748021573485

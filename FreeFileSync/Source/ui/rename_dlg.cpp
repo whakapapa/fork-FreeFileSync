@@ -8,7 +8,7 @@
 #include <chrono>
 //#include <zen/file_path.h>
 #include <wx/valtext.h>
-#include <wx+/window_layout.h>
+#include <wx+/window_tools.h>
 #include <wx+/image_resources.h>
 #include "gui_generated.h"
 #include "../base/multi_rename.h"
@@ -104,7 +104,7 @@ public:
     void renderCell(wxDC& dc, const wxRect& rect, size_t row, ColumnType colType, bool enabled, bool selected, HoverArea rowHover) override
     {
         //draw border on right
-                drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), dipToWxsize(1), wxRIGHT);
+        drawRectangleBorder(dc, rect, wxSystemSettings::GetColour(wxSYS_COLOUR_BTNSHADOW), dipToWxsize(1), wxRIGHT);
 
         wxRect rectTmp = rect;
         rectTmp.x     += getColumnGapLeft();
@@ -362,16 +362,17 @@ RenameDialog::RenameDialog(wxWindow* parent,
 
     //-----------------------------------------------------------
     GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize()
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     m_textCtrlNewName->SetFocus(); //[!] required *before* SetSelection() on wxGTK
     //-----------------------------------------------------------
 
     //macOS issue: the *whole* text control is selected by default, unless we SetSelection() *after* wxDialog::Show()!
-    CallAfter([this, nameCount = fileNamesOld.size(), renamePhrase = renamePhrase]
+    CallAfter([this, nameCount = fileNamesOld.size(), renamePhrase]
     {
         //pre-select name part that user will most likely change
         //assert(contains(renamePhrase, L'\u2776') == nameCount > 1); -> fails, if user selects same item on left and right grid

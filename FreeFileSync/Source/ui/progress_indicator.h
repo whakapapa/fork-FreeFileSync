@@ -55,7 +55,7 @@ enum class PostSyncAction
 
 struct SyncProgressDialog
 {
-    static SyncProgressDialog* create(const zen::WindowLayout::Dimensions& dim,
+    static SyncProgressDialog* create(const zen::WindowLayout::Rect& dlgRect,
                                       const std::function<void()>& userRequestCancel,
                                       const Statistics& syncStat,
                                       wxFrame* parentWindow, //may be nullptr
@@ -69,7 +69,7 @@ struct SyncProgressDialog
     struct Result
     {
         bool autoCloseDialog;
-        zen::WindowLayout::Dimensions dim;
+        zen::WindowLayout::Rect dlgRect;
     };
     virtual Result destroy(bool autoClose, bool restoreParentFrame, TaskResult syncResult, const zen::SharedRef<const zen::ErrorLog>& log) = 0;
     //---------------------------------------------------------------------------

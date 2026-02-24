@@ -382,7 +382,7 @@ void setWriteTimeNative(const Zstring& itemPath, const timespec& modTime, ProcSy
     //test: even modTime == 0 is correctly applied (no NOOP!) test2: same behavior for "utime()"
 
     //hell knows why files on gvfs-mounted Samba shares fail to open(O_WRONLY) returning EOPNOTSUPP:
-    //https://freefilesync.org/forum/viewtopic.php?t=2803 => utimensat() works (but not for gvfs SFTP)
+    //https://freefilesync.org/forum/viewtopic.php?t=2803 => utimensat() works (but not for gvfs SFTP or CIFS)
     if (::utimensat(AT_FDCWD /*'dirfd' ignored for absolute paths*/, itemPath.c_str(), newTimes, procSl == ProcSymlink::asLink ? AT_SYMLINK_NOFOLLOW : 0) == 0)
         return;
     const ErrorCode ecUtimensat = errno;
@@ -396,10 +396,14 @@ void setWriteTimeNative(const Zstring& itemPath, const timespec& modTime, ProcSy
         }
 
         //in other cases utimensat() returns EINVAL for CIFS/NTFS drives, but open+futimens works: https://freefilesync.org/forum/viewtopic.php?t=387
-        //2017-07-04: O_WRONLY | O_APPEND seems to avoid EOPNOTSUPP on gvfs SFTP!
-        const int fdFile = ::open(itemPath.c_str(), O_WRONLY | O_APPEND | O_CLOEXEC);
+        int fdFile = ::open(itemPath.c_str(), O_WRONLY |  O_CLOEXEC);
         if (fdFile == -1)
-            THROW_LAST_SYS_ERROR("open");
+        {
+            //2017-07-04: O_WRONLY | O_APPEND seems to avoid EOPNOTSUPP on gvfs SFTP!
+            fdFile = ::open(itemPath.c_str(), O_WRONLY | O_APPEND | O_CLOEXEC);
+            if (fdFile == -1)
+                THROW_LAST_SYS_ERROR("open");
+        }
         ZEN_ON_SCOPE_EXIT(::close(fdFile));
 
         if (::futimens(fdFile, newTimes) != 0)
@@ -737,7 +741,16 @@ FileCopyResult zen::copyNewFile(const Zstring& sourceFile, const Zstring& target
 
     const auto targetFileIdx = fileOut.getStatBuffered().st_ino; //throw FileError
 
-    //close output file handle before setting file time; also good place to catch errors when closing stream!
+    //try to set modTime while handle is open without error handling (similar to CopyFileEx)
+    const timespec newTimes[2]
+    {
+        {.tv_sec = ::time(nullptr)}, //access time; don't use UTIME_NOW/UTIME_OMIT: more bugs! https://freefilesync.org/forum/viewtopic.php?t=1701
+        sourceInfo.st_mtim,
+    };
+    ::futimens(fileOut.getHandle(), newTimes);
+
+
+    //close output file handle; also good place to catch errors when closing stream!
     fileOut.close(); //throw FileError
     //==========================================================================================================
     //take over fileOut ownership => from this point on, WE are responsible for calling removeFilePlain() on error!!

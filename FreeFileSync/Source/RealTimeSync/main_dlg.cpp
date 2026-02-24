@@ -8,7 +8,7 @@
 #include <wx/wupdlock.h>
 #include <wx/filedlg.h>
 #include <wx+/bitmap_button.h>
-#include <wx+/window_layout.h>
+#include <wx+/window_tools.h>
 #include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
 #include <zen/file_access.h>
@@ -104,7 +104,7 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
     m_scrolledWinFolders->SetScrollRate(scrollDelta, scrollDelta);
 
     m_txtCtrlDirectoryMain->SetMinSize({dipToWxsize(300), -1});
-    setDefaultWidth(*m_spinCtrlDelay);
+    fixSpinCtrl(*m_spinCtrlDelay);
 
     m_bpButtonRemoveTopFolder->Hide();
     m_panelMainFolder->Layout();
@@ -174,9 +174,10 @@ MainDialog::MainDialog(const Zstring& cfgFilePath) :
     else
     {
         //GetSizer()->SetSizeHints(this); //~=Fit() + SetMinSize() => already called by setConfiguration() -> insertAddFolder()
+#ifdef __WXGTK3__
         Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
         //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
         Center(); //apply *after* dialog size change!
 
         Show();
@@ -262,10 +263,10 @@ void MainDialog::onStart(wxCommandEvent& event)
     }
 
     //need to center in case of "startWatchingImmediately"
-
+#ifdef __WXGTK3__
     Show(); //GTK3 size calculation requires visible window: https://github.com/wxWidgets/wxWidgets/issues/16088
     //Hide(); -> avoids old position flash before Center() on GNOME but causes hang on KDE? https://freefilesync.org/forum/viewtopic.php?t=10103#p42404
-
+#endif
     Center(); //apply *after* dialog size change!
 
     Show(); //don't show for CancelReason::requestExit

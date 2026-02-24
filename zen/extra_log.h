@@ -47,7 +47,7 @@ private:
 inline constinit Global<Protected<ExtraLog>> globalExtraLog;
 
 template <class Function>
-auto accessExtraLog(Function fun)
+void accessExtraLog(Function fun)
 {
     globalExtraLog.setOnce([] { return std::make_unique<Protected<ExtraLog>>(); });
 

@@ -11,7 +11,7 @@
 
 GtkButton
 {
-	padding: 4px 5px; /*remove excessive inner border*/
+	padding: 5px 5px; /* coordinate with bitmap_button.h! */
 	/*	min-width:  0;  => Debian: Error code 3: Gtk3Styles.css:13:10'min-width' is not a valid property name [gtk_css_provider_load_from_path]
 		min-height: 0;      */
 }

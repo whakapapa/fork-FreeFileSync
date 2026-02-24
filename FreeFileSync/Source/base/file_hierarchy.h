@@ -1486,6 +1486,7 @@ bool FileSystemObject::passFileFilter(const PathFilter& filter) const
 template <SelectSide side> inline
 time_t SymlinkPair::getLastWriteTime() const
 {
+    assert(!isEmpty<side>());
     return selectParam<side>(attrL_, attrR_).modTime;
 }
 }

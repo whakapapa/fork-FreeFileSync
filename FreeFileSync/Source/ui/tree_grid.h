@@ -149,8 +149,8 @@ private:
     template <class Predicate> void updateView(Predicate pred);
     void applySubView(std::vector<RootNodeImpl>&& newView);
 
-    template <bool ascending> static void sortSingleLevel(std::vector<TreeLine>& items, ColumnTypeOverview columnType);
-    template <bool ascending> struct LessShortName;
+    template <zen::SortDirection sortDir> static void sortSingleLevel(std::vector<TreeLine>& items, ColumnTypeOverview columnType);
+    template <zen::SortDirection sortDir> struct LessShortName;
 
     std::vector<TreeLine> flatTree_; //collapsable/expandable sub-tree of folderCmpView -> always sorted!
     /*             /|\

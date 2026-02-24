@@ -27,7 +27,9 @@ using namespace rts;
 using fff::FfsExitCode;
 
 
+#ifdef __WXGTK3__
     GLOBAL_RUN_ONCE(::gdk_set_allowed_backends("x11,*")); //call *before* gtk_init()
+#endif
 
 IMPLEMENT_APP(Application)
 

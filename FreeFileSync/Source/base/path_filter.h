@@ -90,6 +90,8 @@ private:
     {
     public:
         void insert(const Zstring& mask); //expected: upper-case + Unicode-normalized!
+
+        template <bool allowParentMatch>
         bool matches(const ZstringView relPath) const;
         bool matchesBegin(const ZstringView relPath) const;
 

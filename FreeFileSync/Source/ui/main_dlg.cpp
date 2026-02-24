@@ -24,11 +24,9 @@
 #include <wx+/bitmap_button.h>
 #include <wx+/app_main.h>
 #include <wx+/toggle_button.h>
-#include <wx+/no_flicker.h>
 #include <wx+/rtl.h>
-#include <wx+/window_layout.h>
-#include <wx+/popup_dlg.h>
 #include <wx+/window_tools.h>
+#include <wx+/popup_dlg.h>
 #include <wx+/image_resources.h>
 #include "cfg_grid.h"
 #include "folder_selector.h"
@@ -664,14 +662,14 @@ MainDialog::MainDialog(const FfsGuiConfig& guiCfg, const std::vector<Zstring>& c
     imgTrashSmall_([]
 {
     try { return extractWxImage(fff::getTrashIcon(dipToScreen(getMenuIconDipSize()))); /*throw SysError*/ }
-    catch (SysError&) { assert(false); return loadImage("delete_recycler", dipToScreen(getMenuIconDipSize())); }
+    catch ([[maybe_unused]] const SysError& e) { assert(false); return loadImage("delete_recycler", dipToScreen(getMenuIconDipSize())); }
 }
 ()),
 
 imgFileManagerSmall_([]
 {
     try { return extractWxImage(fff::getFileManagerIcon(dipToScreen(getMenuIconDipSize()))); /*throw SysError*/ }
-    catch (SysError&) { assert(false); return loadImage("file_manager", dipToScreen(getMenuIconDipSize())); }
+    catch ([[maybe_unused]] const SysError& e) { assert(false); return loadImage("file_manager", dipToScreen(getMenuIconDipSize())); }
 }())
 {
     SetSizeHints(dipToWxsize(640), dipToWxsize(400));
@@ -1391,8 +1389,8 @@ GlobalConfig MainDialog::getGlobalCfgBeforeExit()
     //auiMgr_.Update(); //[!] not needed
     globalSettings.dpiLayouts[getDpiScalePercent()].panelLayout = auiMgr_.SavePerspective(); //does not need wxAuiManager::Update()!
 
-    const auto& [size, pos, isMaximized] = WindowLayout::getBeforeClose(*this); //call *after* wxAuiManager::SavePerspective()!
-    globalSettings.dpiLayouts[getDpiScalePercent()].mainDlg = {size, pos, isMaximized};
+    const WindowLayout::Rect& rect = WindowLayout::getBeforeClose(*this); //call *after* wxAuiManager::SavePerspective()!
+    globalSettings.dpiLayouts[getDpiScalePercent()].mainDlg = {rect.size, rect.pos, rect.isMaximized};
 
     return globalSettings;
 }
@@ -3134,7 +3132,7 @@ void MainDialog::resetLayout()
     updateGuiForFolderPair();
 
     //progress dialog size:
-    globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.size        = std::nullopt;
+    globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.size        = wxSize();
     globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.isMaximized = false;
 }
 
@@ -3392,7 +3390,7 @@ void MainDialog::updateUnsavedCfgStatus()
         if (runningElevated()) //throw FileError
             title += L" (root)";
     }
-    catch (FileError&) { assert(false); }
+    catch ([[maybe_unused]] const FileError& e) { assert(false); }
 
     if (!showingConfigName)
         title += SPACED_DASH + _("Folder Comparison and Synchronization");
@@ -4838,7 +4836,7 @@ void MainDialog::onStartSync(wxCommandEvent& event)
 
     const std::chrono::system_clock::time_point syncStartTime = std::chrono::system_clock::now();
 
-    const WindowLayout::Dimensions progressDim
+    const WindowLayout::Rect progDlgRect
     {
         globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.size,
         std::nullopt /*pos*/,
@@ -4854,7 +4852,7 @@ void MainDialog::onStartSync(wxCommandEvent& event)
                                               guiCfg.mainCfg.autoRetryDelay,
                                               globalCfg_.soundFileSyncFinished,
                                               globalCfg_.soundFileAlertPending,
-                                              progressDim,
+                                              progDlgRect,
                                               globalCfg_.progressDlgAutoClose);
     try
     {
@@ -5044,8 +5042,8 @@ void MainDialog::onStartSync(wxCommandEvent& event)
     const StatusHandlerFloatingDialog::DlgOptions dlgOpt = statusHandler.showResult();
 
     globalCfg_.progressDlgAutoClose = dlgOpt.autoCloseSelected;
-    globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.size        = dlgOpt.dim.size; //=> ignore dim.pos
-    globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.isMaximized = dlgOpt.dim.isMaximized;
+    globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.size        = dlgOpt.dlgRect.size; //=> ignore dlgRect.pos
+    globalCfg_.dpiLayouts[getDpiScalePercent()].progressDlg.isMaximized = dlgOpt.dlgRect.isMaximized;
 
     updateGui(); //let's update *after* showResult(): some users are interested in seeing the old statistics dialog even after sync
 

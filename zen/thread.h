@@ -17,7 +17,6 @@ namespace zen
 {
 class InterruptionStatus;
 
-//migrate towards https://en.cppreference.com/w/cpp/thread/jthread
 class InterruptibleThread
 {
 public:
@@ -129,14 +128,15 @@ class Protected
 {
 public:
     Protected() {}
-    explicit Protected(T& value) : value_(value) {}
-    //Protected(T&& tmp ) : value_(std::move(tmp)) {} <- wait until needed
+
+    template <class T2>
+    explicit Protected(T2&& value) : value_(std::forward<T2>(value)) {}
 
     template <class Function>
-    auto access(Function fun) //-> decltype(fun(std::declval<T&>()))
+    auto access(Function&& fun) //let's not use decltype(auto): may return reference to internals?
     {
         std::lock_guard dummy(lockValue_);
-        return fun(value_);
+        return std::forward<Function>(fun)(value_);
     }
 
 private:
@@ -279,37 +279,157 @@ private:
 
 
 
+
+
 //###################### implementation ######################
 
 namespace impl
 {
-template <class Function> inline
-auto runAsync(Function&& fun, std::true_type /*copy-constructible*/)
-{
-    using ResultType = decltype(fun());
-
-    //note: std::packaged_task does NOT support move-only function objects!
-    std::packaged_task<ResultType()> pt(std::forward<Function>(fun));
-    auto fut = pt.get_future();
-    std::thread(std::move(pt)).detach();
-    return fut;
+//thread_local with non-POD seems to cause memory leaks on VS 14 => pointer only is fine:
+inline thread_local InterruptionStatus* threadLocalInterruptionStatus = nullptr;
 }
 
 
 template <class Function> inline
-auto runAsync(Function&& fun, std::false_type /*copy-constructible*/)
+InterruptibleThread::InterruptibleThread(Function&& f)
 {
-    //support move-only function objects!
-    return runAsync([sharedFun = std::make_shared<Function>(std::forward<Function>(fun))]
-    { return (*sharedFun)(); }, std::true_type());
-}
+    stdThread_ = std::thread(
+    [f = std::forward<Function>(f),
+     intStatus = intStatus_] mutable
+    {
+        assert(!impl::threadLocalInterruptionStatus);
+        impl::threadLocalInterruptionStatus = intStatus.get();
+        ZEN_ON_SCOPE_EXIT(impl::threadLocalInterruptionStatus = nullptr);
+
+        try
+        {
+            f(); //throw ThreadStopRequest
+        }
+        catch (ThreadStopRequest&) {}
+    });
 }
 
+
+class InterruptionStatus
+{
+public:
+    //context of InterruptibleThread instance:
+    void requestStop()
+    {
+        stopRequested_ = true;
+
+        {
+            std::lock_guard dummy(lockStopRequest_); //needed! makes sure the following signal is not lost!
+            //usually we'd make "stopRequested_" non-atomic, but this is already given due to interruptibleWait() handling
+        }
+        conditionStopRequested_.notify_all();
+
+        std::lock_guard dummy(lockConditionPtr_);
+        if (activeCondition_)
+            activeCondition_->notify_all(); //signal may get lost!
+        //alternative design locking the cv's mutex (after lockConditionPtr_) would dead lock
+        //when worker thread acquires locks in opposite order in interruptibleWait(): 1. cv's mutex 2. lockConditionPtr_
+    }
+
+    //context of worker thread:
+    bool stopRequested() const { return stopRequested_; }
+
+    //context of worker thread:
+    template <class Predicate>
+    void interruptibleWait(std::condition_variable& cv, std::unique_lock<std::mutex>& lock, Predicate pred) //throw ThreadStopRequest
+    {
+        setActiveCondition(&cv);
+        ZEN_ON_SCOPE_EXIT(setActiveCondition(nullptr));
+
+        //"stopRequested_" is not protected by cv's mutex => signal may get lost!!! e.g. after condition was checked but before the wait begins
+        //=> add artifical time out to mitigate! CPU: 0.25% vs 0% for longer time out! => 2026-01-30: not even visible in Process Explorer anymore
+
+        //std::condition_variable_any to the rescue? (using an additional internal mutex = "slower"?)
+        //see "C++ Concurrency in Action 9.2.4 Interrupting a wait on std::condition_variable_any"
+        //https://github.com/josuttis/jthread/blob/0fa8d394254886c555d6faccd0a3de819b7d47f8/source/condition_variable_any2.hpp#L87
+
+        while (!cv.wait_for(lock, std::chrono::milliseconds(1), [&] { return this->stopRequested_ || pred(); }))
+            ;
+
+        if (stopRequested_)
+            throw ThreadStopRequest();
+    }
+
+    //context of worker thread:
+    template <class Rep, class Period>
+    void interruptibleSleep(const std::chrono::duration<Rep, Period>& relTime) //throw ThreadStopRequest
+    {
+        std::unique_lock lock(lockStopRequest_);
+        if (conditionStopRequested_.wait_for(lock, relTime, [this] { return static_cast<bool>(this->stopRequested_); }))
+            throw ThreadStopRequest();
+    }
+
+private:
+    void setActiveCondition(std::condition_variable* cv)
+    {
+        std::lock_guard dummy(lockConditionPtr_);
+        activeCondition_ = cv;
+    }
+
+    std::atomic<bool> stopRequested_{false}; //std::atomic is uninitialized by default!!!
+    //"The default constructor is trivial: no initialization takes place other than zero initialization of static and thread-local objects."
+
+    std::condition_variable* activeCondition_ = nullptr;
+    std::mutex lockConditionPtr_; //serialize pointer access (only!)
+
+    std::condition_variable conditionStopRequested_;
+    std::mutex lockStopRequest_;
+};
+
+
+inline
+void InterruptibleThread::requestStop() { intStatus_->requestStop(); }
+
+
+//context of worker thread:
+inline
+void interruptionPoint() //throw ThreadStopRequest
+{
+    assert(impl::threadLocalInterruptionStatus);
+    if (impl::threadLocalInterruptionStatus && impl::threadLocalInterruptionStatus->stopRequested())
+        throw ThreadStopRequest();
+}
+
+
+//context of worker thread:
+template <class Predicate> inline
+void interruptibleWait(std::condition_variable& cv, std::unique_lock<std::mutex>& lock, Predicate pred) //throw ThreadStopRequest
+{
+    assert(impl::threadLocalInterruptionStatus);
+    if (impl::threadLocalInterruptionStatus)
+        impl::threadLocalInterruptionStatus->interruptibleWait(cv, lock, pred);
+    else
+        cv.wait(lock, pred);
+}
+
+
+//context of worker thread:
+template <class Rep, class Period> inline
+void interruptibleSleep(const std::chrono::duration<Rep, Period>& relTime) //throw ThreadStopRequest
+{
+    assert(impl::threadLocalInterruptionStatus);
+    if (impl::threadLocalInterruptionStatus)
+        impl::threadLocalInterruptionStatus->interruptibleSleep(relTime);
+    else
+        std::this_thread::sleep_for(relTime);
+}
+
+//------------------------------------------------------------------------------------------
 
 template <class Function> inline
 auto runAsync(Function&& fun)
 {
-    return impl::runAsync(std::forward<Function>(fun), std::is_copy_constructible<Function>());
+    using ResultType = decltype(fun());
+
+    std::packaged_task<ResultType()> pt(std::forward<Function>(fun));
+    auto fut = pt.get_future();
+    std::thread(std::move(pt)).detach();
+    return fut;
 }
 
 
@@ -352,7 +472,6 @@ public:
     {
         std::unique_lock dummy(lockResult_);
         conditionJobDone_.wait(dummy, [&] { return this->jobDone(jobsTotal); });
-
         return std::move(result_);
     }
 
@@ -360,8 +479,8 @@ private:
     bool jobDone(size_t jobsTotal) const { return result_ || (jobsFinished_ >= jobsTotal); } //call while locked!
 
     std::mutex lockResult_;
-    size_t jobsFinished_ = 0; //
     std::optional<T> result_; //our condition is: "have result" or "jobsFinished_ == jobsTotal"
+    size_t jobsFinished_ = 0; //
     std::condition_variable conditionJobDone_;
 };
 
@@ -389,141 +508,6 @@ bool AsyncFirstResult<T>::timedWait(const Duration& duration) const { return asy
 
 template <class T> inline
 std::optional<T> AsyncFirstResult<T>::get() const { return asyncResult_->getResult(jobsTotal_); }
-
-//------------------------------------------------------------------------------------------
-
-class InterruptionStatus
-{
-public:
-    //context of InterruptibleThread instance:
-    void requestStop()
-    {
-        stopRequested_ = true;
-
-        {
-            std::lock_guard dummy(lockSleep_); //needed! makes sure the following signal is not lost!
-            //usually we'd make "interrupted" non-atomic, but this is already given due to interruptibleWait() handling
-        }
-        conditionSleepInterruption_.notify_all();
-
-        std::lock_guard dummy(lockConditionPtr_);
-        if (activeCondition_)
-            activeCondition_->notify_all(); //signal may get lost!
-        //alternative design locking the cv's mutex here could be dangerous: potential for dead lock!
-    }
-
-    //context of worker thread:
-    void throwIfStopped() //throw ThreadStopRequest
-    {
-        if (stopRequested_)
-            throw ThreadStopRequest();
-    }
-
-    //context of worker thread:
-    template <class Predicate>
-    void interruptibleWait(std::condition_variable& cv, std::unique_lock<std::mutex>& lock, Predicate pred) //throw ThreadStopRequest
-    {
-        setConditionVar(&cv);
-        ZEN_ON_SCOPE_EXIT(setConditionVar(nullptr));
-
-        //"stopRequested_" is not protected by cv's mutex => signal may get lost!!! e.g. after condition was checked but before the wait begins
-        //=> add artifical time out to mitigate! CPU: 0.25% vs 0% for longer time out!
-        while (!cv.wait_for(lock, std::chrono::milliseconds(1), [&] { return this->stopRequested_ || pred(); }))
-            ;
-
-        throwIfStopped(); //throw ThreadStopRequest
-    }
-
-    //context of worker thread:
-    template <class Rep, class Period>
-    void interruptibleSleep(const std::chrono::duration<Rep, Period>& relTime) //throw ThreadStopRequest
-    {
-        std::unique_lock lock(lockSleep_);
-        if (conditionSleepInterruption_.wait_for(lock, relTime, [this] { return static_cast<bool>(this->stopRequested_); }))
-            throw ThreadStopRequest();
-    }
-
-private:
-    void setConditionVar(std::condition_variable* cv)
-    {
-        std::lock_guard dummy(lockConditionPtr_);
-        activeCondition_ = cv;
-    }
-
-    std::atomic<bool> stopRequested_{false}; //std::atomic is uninitialized by default!!!
-    //"The default constructor is trivial: no initialization takes place other than zero initialization of static and thread-local objects."
-
-    std::condition_variable* activeCondition_ = nullptr;
-    std::mutex lockConditionPtr_; //serialize pointer access (only!)
-
-    std::condition_variable conditionSleepInterruption_;
-    std::mutex lockSleep_;
-};
-
-
-namespace impl
-{
-//thread_local with non-POD seems to cause memory leaks on VS 14 => pointer only is fine:
-inline thread_local InterruptionStatus* threadLocalInterruptionStatus = nullptr;
-}
-
-
-//context of worker thread:
-inline
-void interruptionPoint() //throw ThreadStopRequest
-{
-    assert(impl::threadLocalInterruptionStatus);
-    if (impl::threadLocalInterruptionStatus)
-        impl::threadLocalInterruptionStatus->throwIfStopped(); //throw ThreadStopRequest
-}
-
-
-//context of worker thread:
-template <class Predicate> inline
-void interruptibleWait(std::condition_variable& cv, std::unique_lock<std::mutex>& lock, Predicate pred) //throw ThreadStopRequest
-{
-    assert(impl::threadLocalInterruptionStatus);
-    if (impl::threadLocalInterruptionStatus)
-        impl::threadLocalInterruptionStatus->interruptibleWait(cv, lock, pred);
-    else
-        cv.wait(lock, pred);
-}
-
-
-//context of worker thread:
-template <class Rep, class Period> inline
-void interruptibleSleep(const std::chrono::duration<Rep, Period>& relTime) //throw ThreadStopRequest
-{
-    assert(impl::threadLocalInterruptionStatus);
-    if (impl::threadLocalInterruptionStatus)
-        impl::threadLocalInterruptionStatus->interruptibleSleep(relTime);
-    else
-        std::this_thread::sleep_for(relTime);
-}
-
-
-template <class Function> inline
-InterruptibleThread::InterruptibleThread(Function&& f)
-{
-    stdThread_ = std::thread(
-    [f = std::forward<Function>(f),
-     intStatus = intStatus_] mutable
-    {
-        assert(!impl::threadLocalInterruptionStatus);
-        impl::threadLocalInterruptionStatus = intStatus.get();
-        ZEN_ON_SCOPE_EXIT(impl::threadLocalInterruptionStatus = nullptr);
-
-        try
-        {
-            f(); //throw ThreadStopRequest
-        }
-        catch (ThreadStopRequest&) {}
-    });
-}
-
-
-inline
-void InterruptibleThread::requestStop() { intStatus_->requestStop(); }
 }
 
 #endif //THREAD_H_7896323423432235246427

@@ -78,9 +78,9 @@ enum class TrimSide
     left,
     right,
 };
-template <class S> [[nodiscard]] S trimCpy(const S& str, TrimSide side = TrimSide::both);
-template <class S>                     void trim(S& str, TrimSide side = TrimSide::both);
-template <class S, class Function>     void trim(S& str, TrimSide side, Function trimThisChar);
+template <class S> [[nodiscard]] std::decay_t<S> trimCpy(S&& str, TrimSide side = TrimSide::both);
+template <class S>                 void trim(S& str, TrimSide side = TrimSide::both);
+template <class S, class Function> void trim(S& str, TrimSide side, Function trimThisChar);
 
 
 template <class S, class T, class U> [[nodiscard]] S replaceCpy(S  str, const T& oldTerm, const U& newTerm);
@@ -345,7 +345,7 @@ S afterLast(const S& str, const T& term, IfNotFoundReturn infr)
         return infr == IfNotFoundReturn::all ? str : S();
 
     it += termLen;
-    return S(it, strLast - it);
+    return {it, strLast};
 }
 
 
@@ -365,7 +365,7 @@ S beforeLast(const S& str, const T& term, IfNotFoundReturn infr)
     if (it == strLast)
         return infr == IfNotFoundReturn::all ? str : S();
 
-    return S(strFirst, it - strFirst);
+    return {strFirst, it};
 }
 
 
@@ -386,7 +386,7 @@ S afterFirst(const S& str, const T& term, IfNotFoundReturn infr)
         return infr == IfNotFoundReturn::all ? str : S();
 
     it += termLen;
-    return S(it, strLast - it);
+    return {it, strLast};
 }
 
 
@@ -406,7 +406,7 @@ S beforeFirst(const S& str, const T& term, IfNotFoundReturn infr)
     if (it == strLast)
         return infr == IfNotFoundReturn::all ? str : S();
 
-    return S(strFirst, it - strFirst);
+    return {strFirst, it};
 }
 
 
@@ -419,7 +419,15 @@ void split2(const S& str, Function1 isDelimiter, Function2 onStringPart)
     for (;;)
     {
         const auto* const blockLast = std::find_if(blockFirst, strEnd, isDelimiter);
-        onStringPart(std::basic_string_view<GetCharTypeT<S>>(blockFirst, blockLast));
+
+        using ReturnType = decltype(onStringPart(std::basic_string_view<GetCharTypeT<S>>()));
+        static_assert(std::is_same_v<ReturnType, void> || std::is_same_v<ReturnType, bool>);
+
+        if constexpr (std::is_same_v<ReturnType, void>)
+            onStringPart(std::basic_string_view<GetCharTypeT<S>>(blockFirst, blockLast));
+        else //allow early exit
+            if (!onStringPart(std::basic_string_view<GetCharTypeT<S>>(blockFirst, blockLast)))
+                break;
 
         if (blockLast == strEnd)
             return;
@@ -460,10 +468,10 @@ ZEN_INIT_DETECT_MEMBER(append)
 template <class S, class InputIterator, typename = std::enable_if_t<hasMember_append<S>>> inline
 void stringAppend(S& str, InputIterator first, InputIterator last) { str.append(first, last);  }
 
-//inefficient append: keep disabled until really needed
-//template <class S, class InputIterator, typename = std::enable_if_t<!hasMember_append<S>>> inline
-//void stringAppend(S& str, InputIterator first, InputIterator last) { str += S(first, last); }
-
+#if 0 //inefficient append: keep disabled until really needed
+template <class S, class InputIterator, typename = std::enable_if_t<!hasMember_append<S>>> inline
+void stringAppend(S& str, InputIterator first, InputIterator last) { str += S(first, last); }
+#endif
 
 template <class S, class T, class U, class CharEq> inline
 void replace(S& str, const T& oldTerm, const U& newTerm, CharEq charEqual)
@@ -604,7 +612,7 @@ void trim(S& str, TrimSide side)
 
 
 template <class S> inline
-S trimCpy(const S& str, TrimSide side)
+std::decay_t<S> trimCpy(S&& str, TrimSide side)
 {
     using CharType = GetCharTypeT<S>;
     const auto* const oldBegin = strBegin(str);
@@ -613,34 +621,22 @@ S trimCpy(const S& str, TrimSide side)
     const auto [newBegin, newEnd] = trimCpy2(oldBegin, oldEnd, side, [](CharType c) { return isWhiteSpace(c); });
 
     if (newBegin == oldBegin && newEnd == oldEnd)
-        return str;
+        return std::forward<S>(str);
     else
-        return S(newBegin, newEnd - newBegin);
+        return {newBegin, newEnd};
 }
 
-
-namespace impl
-{
-template <class S, class T>
-struct CopyStringToString
-{
-    T copy(const S& src) const
-    {
-        static_assert(!std::is_same_v<std::decay_t<S>, std::decay_t<T>>);
-        return {strBegin(src), strLength(src)};
-    }
-};
-
-template <class T>
-struct CopyStringToString<T, T> //perf: we don't need a deep copy if string types match
-{
-    template <class S>
-    T copy(S&& str) const { return std::forward<S>(str); }
-};
-}
 
 template <class T, class S> inline
-T copyStringTo(S&& str) { return impl::CopyStringToString<std::decay_t<S>, T>().copy(std::forward<S>(str)); }
+T copyStringTo(S&& str)
+{
+    static_assert(std::is_same_v<GetCharTypeT<S>, GetCharTypeT<T>>);
+
+    if constexpr (std::is_same_v<std::decay_t<S>, std::decay_t<T>>)
+        return std::forward<S>(str); //no need to deep copy if string types match
+    else
+        return {strBegin(str), strLength(str)};
+}
 
 
 namespace impl
@@ -688,6 +684,12 @@ enum class NumberType
     other,
 };
 
+template <class Num>
+constexpr NumberType getNumberType = isSignedInt  <Num> ? NumberType::signedInt :
+                                     isUnsignedInt<Num> ? NumberType::unsignedInt :
+                                     isFloat      <Num> ? NumberType::floatingPoint :
+                                     NumberType::other;
+
 
 template <class S, class Num> S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::other>) = delete;
 #if 0 //default number to string conversion using streams: convenient, but SLOW, SLOW, SLOW!!!! (~ factor of 20)
@@ -710,12 +712,17 @@ S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::fl
     //let's give some leeway, but 24 chars should suffice: https://www.reddit.com/r/cpp/comments/dgj89g/cppcon_2019_stephan_t_lavavej_floatingpoint/f3j7d3q/
     char* strEnd = toChars(std::begin(buffer), std::end(buffer), number);
 
-    S output;
+    if constexpr (std::is_same_v<GetCharTypeT<S>, char>)
+        return {buffer, strEnd};
+    else
+    {
+        S output;
 
-    for (const char c : std::string_view(buffer, strEnd))
-        output += static_cast<GetCharTypeT<S>>(c);
+        for (const char c : std::string_view(buffer, strEnd))
+            output += static_cast<GetCharTypeT<S>>(c);
 
-    return output;
+        return output;
+    }
 }
 
 
@@ -773,7 +780,7 @@ S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::si
         formatPositiveInteger(number, it);
     assert(it >= std::begin(buffer));
 
-    return S(&*it, std::end(buffer) - it);
+    return {it, std::end(buffer)};
 }
 
 
@@ -787,7 +794,7 @@ S numberTo2(const Num& number, std::integral_constant<NumberType, NumberType::un
     formatPositiveInteger(number, it);
     assert(it >= std::begin(buffer));
 
-    return S(&*it, std::end(buffer) - it);
+    return {it, std::end(buffer)};
 }
 
 //--------------------------------------------------------------------------------
@@ -828,6 +835,7 @@ double stringToFloat(const wchar_t* first, const wchar_t* last)
 template <class Num, class S> inline
 Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::floatingPoint>)
 {
+    assert(isAsciiString(str));
     const auto* const first = strBegin(str);
     const auto* const last  = first + strLength(str);
     return static_cast<Num>(stringToFloat(first, last));
@@ -899,26 +907,14 @@ Num stringTo2(const S& str, std::integral_constant<NumberType, NumberType::unsig
 template <class S, class Num> inline
 S numberTo(const Num& number)
 {
-    using TypeTag = std::integral_constant<impl::NumberType,
-          isSignedInt  <Num> ? impl::NumberType::signedInt :
-          isUnsignedInt<Num> ? impl::NumberType::unsignedInt :
-          isFloat      <Num> ? impl::NumberType::floatingPoint :
-          impl::NumberType::other>;
-
-    return impl::numberTo2<S>(number, TypeTag());
+    return impl::numberTo2<S>(number, std::integral_constant<impl::NumberType, impl::getNumberType<Num>>());
 }
 
 
 template <class Num, class S> inline
 Num stringTo(const S& str)
 {
-    using TypeTag = std::integral_constant<impl::NumberType,
-          isSignedInt  <Num> ? impl::NumberType::signedInt :
-          isUnsignedInt<Num> ? impl::NumberType::unsignedInt :
-          isFloat      <Num> ? impl::NumberType::floatingPoint :
-          impl::NumberType::other>;
-
-    return impl::stringTo2<Num>(str, TypeTag());
+    return impl::stringTo2<Num>(str, std::integral_constant<impl::NumberType, impl::getNumberType<Num>>());
 }
 
 

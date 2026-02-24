@@ -313,7 +313,7 @@ public:
                         {
                             try
                             {
-                                AuthCbType* callback = *reinterpret_cast<AuthCbType**>(abstract); //free this poor little C-API from its shackles and redirect to a proper lambda
+                                AuthCbType* callback = static_cast<AuthCbType*>(*abstract); //free this poor little C-API from its shackles and redirect to a proper lambda
                                 (*callback)(num_prompts, prompts, responses); //name, instruction are nullptr for sourceforge.net
                             }
                             catch (...) { assert(false); }
@@ -322,7 +322,7 @@ public:
                         if (*::libssh2_session_abstract(sshSession_))
                             throw SysError(L"libssh2_session_abstract: non-null value");
 
-                        *reinterpret_cast<AuthCbType**>(::libssh2_session_abstract(sshSession_)) = &authCallback;
+                        *::libssh2_session_abstract(sshSession_) = &authCallback;
                         ZEN_ON_SCOPE_EXIT(*::libssh2_session_abstract(sshSession_) = nullptr);
 
                         if (::libssh2_userauth_keyboard_interactive(sshSession_, usernameUtf8, authCallbackWrapper) != 0)
@@ -382,7 +382,7 @@ public:
 
                             if (std::count(pkStream.begin(), pkStream.end(), ' ') == 2 &&
                             /**/std::all_of(pkStream.begin(), pkStream.end(), [](const char c) { return isDigit(c) || c == ' '; }))
-                            return L"SSH-1 public key";
+                            /**/return L"SSH-1 public key";
 
                             //"-----BEGIN PRIVATE KEY-----"                => OpenSSH SSH-2 private key (PKCS#8 PrivateKeyInfo)          => should work
                             //"-----BEGIN ENCRYPTED PRIVATE KEY-----"      => OpenSSH SSH-2 private key (PKCS#8 EncryptedPrivateKeyInfo) => should work
@@ -737,11 +737,7 @@ class SftpSessionManager //reuse (healthy) SFTP sessions globally
     struct SshSessionCache;
 
 public:
-    SftpSessionManager() : sessionCleaner_([this]
-    {
-        setCurrentThreadName(Zstr("Session Cleaner[SFTP]"));
-        runGlobalSessionCleanUp(); /*throw ThreadStopRequest*/
-    }) {}
+    SftpSessionManager() {}
 
     struct ReUseOnDelete
     {
@@ -836,7 +832,6 @@ public:
         const int timeoutSec_;
     };
 
-
     std::shared_ptr<SshSessionShared> getSharedSession(const SftpLogin& login) //throw SysError, SysErrorPassword
     {
         Protected<SshSessionCache>& sessionCache = getSessionCache(login);
@@ -868,6 +863,8 @@ public:
                 sessionCfg = *cache.activeCfg;
         });
 
+        startGlobalSessionCleanUp();
+
         //create new SFTP session outside the lock: 1. don't block other threads 2. non-atomic regarding "sessionCache"! => one session too many is not a problem!
         if (!sharedSession)
         {
@@ -885,7 +882,6 @@ public:
 
         return sharedSession;
     }
-
 
     std::unique_ptr<SshSessionExclusive> getExclusiveSession(const SftpLogin& login) //throw SysError
     {
@@ -906,6 +902,8 @@ public:
             else
                 sessionCfg = *cache.activeCfg;
         });
+
+        startGlobalSessionCleanUp();
 
         //create new SFTP session outside the lock: 1. don't block other threads 2. non-atomic regarding "sessionCache"! => one session too many is not a problem!
         if (!sshSession)
@@ -1001,47 +999,55 @@ private:
     }
 
     //run a dedicated clean-up thread => it's unclear when the server let's a connection time out, so we do it preemptively
-    //context of worker thread:
-    void runGlobalSessionCleanUp() //throw ThreadStopRequest
+    void startGlobalSessionCleanUp()
     {
-        std::chrono::steady_clock::time_point lastCleanupTime;
-        for (;;)
+        static constinit std::once_flag onceStartThread; //=> no "magic static" code gen
+        std::call_once(onceStartThread, [this]
         {
-            const auto now = std::chrono::steady_clock::now();
-
-            if (now < lastCleanupTime + SFTP_SESSION_CLEANUP_INTERVAL)
-                interruptibleSleep(lastCleanupTime + SFTP_SESSION_CLEANUP_INTERVAL - now); //throw ThreadStopRequest
-
-            lastCleanupTime = std::chrono::steady_clock::now();
-
-            std::vector<Protected<SshSessionCache>*> sessionCaches; //pointers remain stable, thanks to std::map<>
-
-            globalSessionCache_.access([&](GlobalSshSessions& sessionsById)
+            sessionCleaner_ = InterruptibleThread([this]
             {
-                for (auto& [sessionId, idleSession] : sessionsById)
-                    sessionCaches.push_back(&idleSession);
-            });
-            for (Protected<SshSessionCache>* sessionCache : sessionCaches)
+                setCurrentThreadName(Zstr("Session Cleaner[SFTP]"));
+
+                std::chrono::steady_clock::time_point lastCleanupTime;
                 for (;;)
                 {
-                    bool done = false;
-                    sessionCache->access([&](SshSessionCache& cache)
+                    const auto now = std::chrono::steady_clock::now();
+
+                    if (now < lastCleanupTime + SFTP_SESSION_CLEANUP_INTERVAL)
+                        interruptibleSleep(lastCleanupTime + SFTP_SESSION_CLEANUP_INTERVAL - now); //throw ThreadStopRequest
+
+                    lastCleanupTime = std::chrono::steady_clock::now();
+
+                    std::vector<Protected<SshSessionCache>*> sessionCaches; //pointers remain stable, thanks to std::map<>
+
+                    globalSessionCache_.access([&](GlobalSshSessions& sessionsById)
                     {
-                        for (std::unique_ptr<SshSession>& sshSession : cache.idleSshSessions)
-                            if (!sshSession->isHealthy()) //!isHealthy() sessions are destroyed after use => in this context this means they have been idle for too long
-                            {
-                                sshSession.swap(cache.idleSshSessions.back());
-                                /**/            cache.idleSshSessions.pop_back(); //run ~SshSession *inside* the lock! => avoid hitting server limits!
-                                return; //don't hold lock for too long: delete only one session at a time, then yield...
-                            }
-                        std::erase_if(cache.sshSessionsWithThreadAffinity, [](const auto& v) { return v.second.expired(); }); //clean up dangling weak pointer
-                        done = true;
+                        for (auto& [sessionId, idleSession] : sessionsById)
+                            sessionCaches.push_back(&idleSession);
                     });
-                    if (done)
-                        break;
-                    std::this_thread::yield(); //outside the lock
+                    for (Protected<SshSessionCache>* sessionCache : sessionCaches)
+                        for (;;)
+                        {
+                            bool done = false;
+                            sessionCache->access([&](SshSessionCache& cache)
+                            {
+                                for (std::unique_ptr<SshSession>& sshSession : cache.idleSshSessions)
+                                    if (!sshSession->isHealthy()) //!isHealthy() sessions are destroyed after use => in this context this means they have been idle for too long
+                                    {
+                                        sshSession.swap(cache.idleSshSessions.back());
+                                        /**/            cache.idleSshSessions.pop_back(); //run ~SshSession *inside* the lock! => avoid hitting server limits!
+                                        return; //don't hold lock for too long: delete only one session at a time, then yield...
+                                    }
+                                std::erase_if(cache.sshSessionsWithThreadAffinity, [](const auto& v) { return v.second.expired(); }); //clean up dangling weak pointer
+                                done = true;
+                            });
+                            if (done)
+                                break;
+                            std::this_thread::yield(); //outside the lock
+                        }
                 }
-        }
+            });
+        });
     }
 
     struct SshSessionCache

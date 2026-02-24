@@ -197,7 +197,7 @@ public:
         }();
 
         if (drawBottomLine)
-        drawRectangleBorder(dc, rect, getColorGridLine(), dipToWxsize(1), wxBOTTOM);
+            drawRectangleBorder(dc, rect, getColorGridLine(), dipToWxsize(1), wxBOTTOM);
         //--------------------------------------------------------
     }
 

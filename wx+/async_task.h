@@ -78,7 +78,7 @@ public:
 
         //uncaught exception? => let the app crash at throw location: requires InterruptibleThread, not std::thread!
         InterruptibleThread([prom = std::move(prom),
-                     fun = std::forward<Fun>(evalAsync)] mutable
+                             fun = std::forward<Fun>(evalAsync)] mutable
         {
             if constexpr (std::is_same_v<ResultType, void>)
             {

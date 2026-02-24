@@ -24,7 +24,6 @@
     Xcode  https://developer.apple.com/xcode/cpp
     libc++ https://libcxx.llvm.org/cxx2a_status.html                                     */
 
-
 namespace std
 {
 

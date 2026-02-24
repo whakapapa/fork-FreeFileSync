@@ -1394,9 +1394,8 @@ void readConfig(const XmlIn& in, GlobalConfig& cfg, int formatVer)
     //TODO: remove old parameter after migration! 2021-03-06
     if (formatVer < 21)
     {
-        cfg.dpiLayouts[getDpiScalePercent()].progressDlg.size = wxSize();
-        in2["ProgressDialog"].attribute("Width",     cfg.dpiLayouts[getDpiScalePercent()].progressDlg.size->x);
-        in2["ProgressDialog"].attribute("Height",    cfg.dpiLayouts[getDpiScalePercent()].progressDlg.size->y);
+        in2["ProgressDialog"].attribute("Width",     cfg.dpiLayouts[getDpiScalePercent()].progressDlg.size.x);
+        in2["ProgressDialog"].attribute("Height",    cfg.dpiLayouts[getDpiScalePercent()].progressDlg.size.y);
         in2["ProgressDialog"].attribute("Maximized", cfg.dpiLayouts[getDpiScalePercent()].progressDlg.isMaximized);
     }
 
@@ -1460,10 +1459,9 @@ void readConfig(const XmlIn& in, GlobalConfig& cfg, int formatVer)
     //TODO: remove old parameter after migration! 2021-03-06
     if (formatVer < 21)
     {
-        cfg.dpiLayouts[getDpiScalePercent()].mainDlg.size = wxSize();
-        inMainWin.attribute("Width",     cfg.dpiLayouts[getDpiScalePercent()].mainDlg.size->x);
-        inMainWin.attribute("Height",    cfg.dpiLayouts[getDpiScalePercent()].mainDlg.size->y);
-        cfg.dpiLayouts[getDpiScalePercent()].mainDlg.pos  = wxPoint();
+        inMainWin.attribute("Width",     cfg.dpiLayouts[getDpiScalePercent()].mainDlg.size.x);
+        inMainWin.attribute("Height",    cfg.dpiLayouts[getDpiScalePercent()].mainDlg.size.y);
+        cfg.dpiLayouts[getDpiScalePercent()].mainDlg.pos = wxPoint();
         inMainWin.attribute("PosX",      cfg.dpiLayouts[getDpiScalePercent()].mainDlg.pos->x);
         inMainWin.attribute("PosY",      cfg.dpiLayouts[getDpiScalePercent()].mainDlg.pos->y);
         inMainWin.attribute("Maximized", cfg.dpiLayouts[getDpiScalePercent()].mainDlg.isMaximized);
@@ -1816,13 +1814,12 @@ void readConfig(const XmlIn& in, GlobalConfig& cfg, int formatVer)
             if (formatVer < 26)
             {
                 XmlIn inLayoutMain = inLayout["MainDialog"];
-                layout.mainDlg.size = wxSize();
-                inLayoutMain.attribute("Width",     layout.mainDlg.size->x);
-                inLayoutMain.attribute("Height",    layout.mainDlg.size->y);
+                inLayoutMain.attribute("Width",  layout.mainDlg.size.x);
+                inLayoutMain.attribute("Height", layout.mainDlg.size.y);
 
                 layout.mainDlg.pos = wxPoint();
-                inLayoutMain.attribute("PosX",      layout.mainDlg.pos->x);
-                inLayoutMain.attribute("PosY",      layout.mainDlg.pos->y);
+                inLayoutMain.attribute("PosX", layout.mainDlg.pos->x);
+                inLayoutMain.attribute("PosY", layout.mainDlg.pos->y);
 
                 inLayoutMain.attribute("Maximized", layout.mainDlg.isMaximized);
 
@@ -1833,22 +1830,16 @@ void readConfig(const XmlIn& in, GlobalConfig& cfg, int formatVer)
                 inLayoutMain["FilePanelRight"](layout.fileColumnAttribsRight);
 
                 XmlIn inLayoutProgress = inLayout["ProgressDialog"];
-                layout.progressDlg.size = wxSize();
-                inLayoutProgress.attribute("Width",  layout.progressDlg.size->x);
-                inLayoutProgress.attribute("Height", layout.progressDlg.size->y);
+                inLayoutProgress.attribute("Width",  layout.progressDlg.size.x);
+                inLayoutProgress.attribute("Height", layout.progressDlg.size.y);
 
                 inLayoutProgress.attribute("Maximized", layout.progressDlg.isMaximized);
             }
             else
             {
                 XmlIn inLayoutMain = inLayout["MainWindow"];
-                if (inLayoutMain.hasAttribute("Width") &&
-                    inLayoutMain.hasAttribute("Height"))
-                {
-                    layout.mainDlg.size = wxSize();
-                    inLayoutMain.attribute("Width",  layout.mainDlg.size->x);
-                    inLayoutMain.attribute("Height", layout.mainDlg.size->y);
-                }
+                inLayoutMain.attribute("Width",  layout.mainDlg.size.x);
+                inLayoutMain.attribute("Height", layout.mainDlg.size.y);
                 if (inLayoutMain.hasAttribute("PosX") &&
                     inLayoutMain.hasAttribute("PosY"))
                 {
@@ -1859,13 +1850,8 @@ void readConfig(const XmlIn& in, GlobalConfig& cfg, int formatVer)
                 inLayoutMain.attribute("Maximized", layout.mainDlg.isMaximized);
 
                 XmlIn inLayoutProgress = inLayout["ProgressDialog"];
-                if (inLayoutProgress.hasAttribute("Width") &&
-                    inLayoutProgress.hasAttribute("Height"))
-                {
-                    layout.progressDlg.size = wxSize();
-                    inLayoutProgress.attribute("Width",  layout.progressDlg.size->x);
-                    inLayoutProgress.attribute("Height", layout.progressDlg.size->y);
-                }
+                inLayoutProgress.attribute("Width",  layout.progressDlg.size.x);
+                inLayoutProgress.attribute("Height", layout.progressDlg.size.y);
                 inLayoutProgress.attribute("Maximized", layout.progressDlg.isMaximized);
 
                 inLayout["Panels"        ](layout.panelLayout);
@@ -2303,11 +2289,8 @@ void writeConfig(const GlobalConfig& cfg, XmlOut& out)
         outLayout.attribute("Scale", numberTo<std::string>(scalePercent) + '%');
 
         XmlOut outLayoutMain = outLayout["MainWindow"];
-        if (layout.mainDlg.size)
-        {
-            outLayoutMain.attribute("Width",  layout.mainDlg.size->x);
-            outLayoutMain.attribute("Height", layout.mainDlg.size->y);
-        }
+        outLayoutMain.attribute("Width",  layout.mainDlg.size.x);
+        outLayoutMain.attribute("Height", layout.mainDlg.size.y);
         if (layout.mainDlg.pos)
         {
             outLayoutMain.attribute("PosX", layout.mainDlg.pos->x);
@@ -2316,11 +2299,8 @@ void writeConfig(const GlobalConfig& cfg, XmlOut& out)
         outLayoutMain.attribute("Maximized", layout.mainDlg.isMaximized);
 
         XmlOut outLayoutProgress = outLayout["ProgressDialog"];
-        if (layout.progressDlg.size)
-        {
-            outLayoutProgress.attribute("Width",  layout.progressDlg.size->x);
-            outLayoutProgress.attribute("Height", layout.progressDlg.size->y);
-        }
+        outLayoutProgress.attribute("Width",  layout.progressDlg.size.x);
+        outLayoutProgress.attribute("Height", layout.progressDlg.size.y);
         outLayoutProgress.attribute("Maximized", layout.progressDlg.isMaximized);
 
         outLayout["Panels"        ](layout.panelLayout);

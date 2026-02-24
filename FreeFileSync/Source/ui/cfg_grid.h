@@ -143,7 +143,7 @@ private:
     void addCfgFilesImpl(const std::vector<Zstring>& filePaths);
 
     void sortListView();
-    template <bool ascending> void sortListViewImpl();
+    template <zen::SortDirection sortDir> void sortListViewImpl();
 
     const Zstring lastRunConfigPath_ = getLastRunConfigPath(); //let's not use another static...
 

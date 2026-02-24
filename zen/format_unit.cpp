@@ -192,6 +192,8 @@ std::wstring zen::formatUtcToLocalTime(time_t utcTime)
 
     const TimeComp& loc = getLocalTime(utcTime); //returns TimeComp() on error
 
+    //https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/strftime-wcsftime-strftime-l-wcsftime-l
+    //Windows: %x := short date format   %X := long time format
     /*const*/ std::wstring dateTimeFmt = utfTo<std::wstring>(formatTime(Zstr("%x  %X"), loc));
     if (dateTimeFmt.empty())
         return fmtFallback();

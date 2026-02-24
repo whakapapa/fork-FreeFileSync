@@ -159,6 +159,21 @@ wxRect getIntersection(const wxRect& rect1, const wxRect& rect2)
 }
 
 
+inline
+wxSize getIntersection(const wxSize& sz1, const wxSize& sz2)
+{
+    return {std::min(sz1.x, sz2.x), std::min(sz1.y, sz2.y)};
+}
+
+
+inline
+wxRect getBoundingBox(const wxRect& rect1, const wxRect& rect2)
+{
+    return rect1.Union(rect2); //another misnomer
+}
+
+
+
 //---------------------- implementation ------------------------
 class RecursiveDcClipper //wxDCClipper does *not* stack => fix for yet another poor wxWidgets implementation:
 {
